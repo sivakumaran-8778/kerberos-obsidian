@@ -132,8 +132,8 @@ class SteganographyAnalysisNotifier extends Notifier<ProvenanceResult?> {
 
     if (firstDiffOffset != null && bytes.isNotEmpty) {
       final normalizedPos = (firstDiffOffset / bytes.length).clamp(0.0, 0.999);
-      targetRow = (normalizedPos * 16).floor().clamp(1, 13);
-      targetCol = ((normalizedPos * 256).floor() % 16).clamp(1, 13);
+      targetRow = (normalizedPos * 16).floor().clamp(0, 15);
+      targetCol = ((normalizedPos * 256).floor() % 16).clamp(0, 15);
     } else {
       // Quadrant B default for hex/stream tampering (Rows 3..7, Cols 9..13)
       targetRow = 3;
@@ -159,31 +159,7 @@ class SteganographyAnalysisNotifier extends Notifier<ProvenanceResult?> {
       }
     }
 
-    // Detect structural markers in file bytes
-    final probeLen = bytes.length > 32768 ? 32768 : bytes.length;
-    final probeStr = String.fromCharCodes(bytes.take(probeLen));
 
-    if (probeStr.contains('re f') || probeStr.contains('/Widget')) {
-      for (int dr = 0; dr <= 1; dr++) {
-        for (int dc = 0; dc <= 3; dc++) {
-          final r = (targetRow + 3 + dr).clamp(0, 15);
-          final c = (targetCol - 2 + dc).clamp(0, 15);
-          final idx = r * 16 + c;
-          overlappedCells.add(idx);
-          matrix[idx] = (0.68 + rnd.nextDouble() * 0.07).clamp(0.62, 0.75);
-        }
-      }
-    }
-
-    if (probeStr.contains('3 Tr') || bytes.length > 50000) {
-      for (int dc = 0; dc <= 2; dc++) {
-        final r = (targetRow + 6).clamp(0, 15);
-        final c = (targetCol + dc).clamp(0, 15);
-        final idx = r * 16 + c;
-        hiddenCells.add(idx);
-        matrix[idx] = (0.78 + rnd.nextDouble() * 0.08).clamp(0.72, 0.85);
-      }
-    }
 
     // Determine Quadrant name
     String quadrant = 'Quadrant B';

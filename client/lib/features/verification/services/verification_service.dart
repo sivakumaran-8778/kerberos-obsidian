@@ -574,8 +574,8 @@ class VerificationService {
     int targetCol = 10;
     if (firstDiffOffset != null && bytes.isNotEmpty) {
       final normalizedPos = (firstDiffOffset / bytes.length).clamp(0.0, 0.999);
-      targetRow = (normalizedPos * 16).floor().clamp(1, 13);
-      targetCol = ((normalizedPos * 256).floor() % 16).clamp(1, 13);
+      targetRow = (normalizedPos * 16).floor().clamp(0, 15);
+      targetCol = ((normalizedPos * 256).floor() % 16).clamp(0, 15);
     }
 
     for (int dr = -1; dr <= 2; dr++) {
