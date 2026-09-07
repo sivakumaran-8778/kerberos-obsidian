@@ -34,6 +34,8 @@ class WebRTCService {
 
   bool get isConnected => _dataChannel?.state == RTCDataChannelState.RTCDataChannelOpen;
   RTCDataChannelState? get dataChannelState => _dataChannel?.state;
+  String? get currentTargetId => _currentTargetId;
+  RTCIceConnectionState? get currentIceState => _currentIceState;
 
   // WebRTC ICE Configuration: Standard W3C STUN + OpenRelay TURN
   static const Map<String, dynamic> _iceConfiguration = {
@@ -378,67 +380,28 @@ class WebRTCService {
     await _dataChannel!.send(RTCDataChannelMessage(text));
   }
 
-  /// Streams binary payload over the DataChannel in 16KB chunks.
-  /// Throws granular, highly specific technical exceptions on any failure.
+  /// Streams binary payload over the DataChannel in 8KB chunks with adaptive throttling.
   Future<void> sendFileBytes(Uint8List fileBytes) async {
-    onStatusUpdate?.call("Waiting for peer to accept and open DataChannel...");
-
     int elapsedMs = 0;
     const int intervalMs = 100;
-    const int timeoutMs = 45000; // 45s timeout to allow remote user to click Accept
+    const int timeoutMs = 3000; // 3s wait for DataChannel, then throw to trigger relay fallback
 
     while ((_dataChannel == null || _dataChannel!.state != RTCDataChannelState.RTCDataChannelOpen) && elapsedMs < timeoutMs) {
       if (_lastTechnicalError != null) {
         throw Exception(_lastTechnicalError!);
       }
-      if (_currentIceState == RTCIceConnectionState.RTCIceConnectionStateFailed) {
-        throw Exception(
-          "WebRTC ICE Connection Failed: Direct UDP and TURN relay routes were blocked by network firewall or symmetric NAT.\n"
-          "Troubleshooting:\n"
-          "1. Ensure both devices have Kerberos open.\n"
-          "2. If on same Wi-Fi, router may block client-to-client traffic (AP Isolation).\n"
-          "3. Verify outbound ports 80/443/3478 are permitted."
-        );
-      }
       await Future.delayed(const Duration(milliseconds: intervalMs));
       elapsedMs += intervalMs;
-
-      if (elapsedMs % 2000 == 0) {
-        if (!_isRemoteDescriptionSet) {
-          onStatusUpdate?.call("Awaiting recipient acceptance (${elapsedMs ~/ 1000}s/45s)...");
-        } else {
-          onStatusUpdate?.call("Connecting DataChannel (${elapsedMs ~/ 1000}s/45s)... State: ${_dataChannel?.state ?? 'null'}, ICE: ${_currentIceState ?? 'none'}");
-        }
-      }
     }
 
     if (_dataChannel == null || _dataChannel!.state != RTCDataChannelState.RTCDataChannelOpen) {
-      if (_lastTechnicalError != null) {
-        throw Exception(_lastTechnicalError!);
-      }
-      if (!_isRemoteDescriptionSet) {
-        throw Exception(
-          "Handshake Timeout: Recipient ${_currentTargetId ?? 'target'} did not accept the incoming transfer within 45s.\n"
-          "Resolution: Ensure the recipient taps 'ACCEPT TRANSFER' on their device or turns on Auto-Accept."
-        );
-      }
-      if (_currentIceState == RTCIceConnectionState.RTCIceConnectionStateChecking) {
-        throw Exception(
-          "ICE Negotiation Timeout: ICE is still 'Checking' candidate pairs.\n"
-          "Cause: Neither direct P2P nor TURN relay candidates could be verified.\n"
-          "Resolution: Check network firewall settings or try switching networks."
-        );
-      }
-      throw Exception(
-        "DataChannel Timeout: Peer accepted, but SCTP DataChannel failed to enter 'open' state.\n"
-        "Current DataChannel: ${_dataChannel?.state ?? 'null'}, ICE: ${_currentIceState ?? 'none'}."
-      );
+      throw Exception("DataChannel is not open (current state: ${_dataChannel?.state})");
     }
 
-    onStatusUpdate?.call("DataChannel Open! Transmitting encrypted payload...");
+    onStatusUpdate?.call("Transmitting encrypted payload...");
     print(">> [WebRTC] SENDER: DataChannel Open! Transmitting payload (${fileBytes.length} bytes)...");
 
-    const int chunkSize = 16384; // 16KB chunks
+    const int chunkSize = 8192; // 8KB chunks for optimal cross-platform SCTP stability
     int offset = 0;
     final totalBytes = fileBytes.length;
 
@@ -447,11 +410,11 @@ class WebRTCService {
         throw Exception("Transfer Aborted: DataChannel disconnected prematurely during transmission.");
       }
 
-      // Backpressure throttling: prevent buffer overflow on slow networks
+      // Backpressure throttling: prevent buffer overflow
       while (_dataChannel != null &&
           _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen &&
-          (_dataChannel!.bufferedAmount ?? 0) > 65536) {
-        await Future.delayed(const Duration(milliseconds: 10));
+          (_dataChannel!.bufferedAmount ?? 0) > 32768) {
+        await Future.delayed(const Duration(milliseconds: 12));
       }
 
       final end = (offset + chunkSize < totalBytes) ? offset + chunkSize : totalBytes;
@@ -464,22 +427,23 @@ class WebRTCService {
       onTransferProgress?.call(progress);
 
       // Adaptive throttle to prevent buffer overflow
-      if (kIsWeb) {
-        await Future.delayed(const Duration(milliseconds: 4));
-      } else {
-        await Future.delayed(const Duration(milliseconds: 1));
-      }
+      await Future.delayed(const Duration(milliseconds: 3));
     }
 
-    // Wait until buffered amount drains before sending EOF
+    // Wait until buffered amount drains before sending EOF (max 2 seconds)
+    int drainMs = 0;
     while (_dataChannel != null &&
         _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen &&
-        (_dataChannel!.bufferedAmount ?? 0) > 0) {
-      await Future.delayed(const Duration(milliseconds: 10));
+        (_dataChannel!.bufferedAmount ?? 0) > 0 &&
+        drainMs < 2000) {
+      await Future.delayed(const Duration(milliseconds: 15));
+      drainMs += 15;
     }
 
     // Send string EOF sentinel
-    await _dataChannel!.send(RTCDataChannelMessage("EOF"));
+    if (_dataChannel != null && _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
+      await _dataChannel!.send(RTCDataChannelMessage("EOF"));
+    }
     print(">> [WebRTC] SENDER: EOF sent. Transfer completed successfully.");
     onStatusUpdate?.call("Payload transmission complete.");
     onTransferProgress?.call(1.0);

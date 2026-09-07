@@ -47,9 +47,20 @@ class MockSignalingService extends Fake implements SignalingService {
   @override
   Function(String senderId, String senderName, Map<String, dynamic> messagePayload)? onP2PChatFallbackReceived;
   @override
+  Function(String senderId)? onSessionLeaveReceived;
+  @override
+  Function(String senderId, Map<String, dynamic> chunkPayload)? onP2PFileChunkReceived;
+  @override
   String get userEmail => 'agent@enclave.local';
   @override
   String get displayName => 'Test Agent';
+
+  @override
+  Future<void> sendSignal({
+    required String targetId,
+    required String type,
+    required Map<String, dynamic> payload,
+  }) async {}
 }
 
 class MockLedgerService extends Fake implements LedgerService {

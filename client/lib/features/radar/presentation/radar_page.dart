@@ -90,7 +90,6 @@ class _RadarPageState extends ConsumerState<RadarPage> with SingleTickerProvider
     final sessionService = ref.watch(p2pSessionServiceProvider);
     final peers = ref.watch(radarPeersListProvider);
     final userProfile = ref.watch(userProfileProvider);
-    final showSimulated = ref.watch(simulatedPeersEnabledProvider);
     final incomingRequest = ref.watch(incomingTransferNotifierProvider);
 
     // Only switch to chat screen when fully connected
@@ -141,9 +140,8 @@ class _RadarPageState extends ConsumerState<RadarPage> with SingleTickerProvider
                   peers: peers,
                   myName: userProfile.displayName.isNotEmpty ? userProfile.displayName : 'Local Enclave',
                   myPlatform: currentPlatform,
-                  isSimulatedActive: showSimulated,
-                  onToggleSimulated: (val) {
-                    ref.read(simulatedPeersEnabledProvider.notifier).state = val;
+                  onPeerSelected: (peer) async {
+                    await sessionService.connectToPeer(peer);
                   },
                   onRefresh: () async {
                     await ref.read(signalingServiceProvider).rescanMesh();
@@ -160,9 +158,6 @@ class _RadarPageState extends ConsumerState<RadarPage> with SingleTickerProvider
                         ),
                       );
                     }
-                  },
-                  onPeerSelected: (peer) async {
-                    await sessionService.connectToPeer(peer);
                   },
                 ),
         ),

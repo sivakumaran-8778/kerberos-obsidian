@@ -23,6 +23,12 @@ class SignalingService {
   // Fallback direct message relay callback
   Function(String senderId, String senderName, Map<String, dynamic> messagePayload)? onP2PChatFallbackReceived;
 
+  // Session termination callback
+  Function(String senderId)? onSessionLeaveReceived;
+
+  // Fallback file transfer chunk callback
+  Function(String senderId, Map<String, dynamic> chunkPayload)? onP2PFileChunkReceived;
+
   // Cached active peers in the enclave
   List<Map<String, dynamic>> currentPeers = [];
 
@@ -42,6 +48,7 @@ class SignalingService {
         _userEmail = userEmail;
 
   bool get isInRadar => _isInRadar;
+  String get myUuid => _myUuid;
   String get userEmail => _userEmail;
   String get displayName => _displayName;
 
@@ -266,6 +273,13 @@ class SignalingService {
           case 'p2p_chat_fallback':
             print(">> [Signaling] P2P chat fallback message received from $senderName ($senderId)");
             onP2PChatFallbackReceived?.call(senderId, senderName, signalPayload);
+            break;
+          case 'session_leave':
+            print(">> [Signaling] Session leave received from $senderName ($senderId)");
+            onSessionLeaveReceived?.call(senderId);
+            break;
+          case 'p2p_file_chunk':
+            onP2PFileChunkReceived?.call(senderId, signalPayload);
             break;
           default:
             print(">> [Signaling] Unrecognized signal type: '$type'");

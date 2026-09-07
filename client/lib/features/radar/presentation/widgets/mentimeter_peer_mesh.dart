@@ -13,8 +13,6 @@ class MentimeterPeerMesh extends StatefulWidget {
   final String myPlatform;
   final Function(RadarPeer peer) onPeerSelected;
   final VoidCallback onRefresh;
-  final bool isSimulatedActive;
-  final ValueChanged<bool> onToggleSimulated;
 
   const MentimeterPeerMesh({
     super.key,
@@ -23,8 +21,6 @@ class MentimeterPeerMesh extends StatefulWidget {
     required this.myPlatform,
     required this.onPeerSelected,
     required this.onRefresh,
-    required this.isSimulatedActive,
-    required this.onToggleSimulated,
   });
 
   @override
@@ -170,40 +166,6 @@ class _MentimeterPeerMeshState extends State<MentimeterPeerMesh> with SingleTick
                   ),
                 ),
               ],
-            ),
-          ),
-
-          // Simulation Toggle
-          InkWell(
-            onTap: () => widget.onToggleSimulated(!widget.isSimulatedActive),
-            borderRadius: BorderRadius.circular(100),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: widget.isSimulatedActive ? const Color(0x28A855F7) : const Color(0x10FFFFFF),
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(
-                  color: widget.isSimulatedActive ? const Color(0xFFC084FC) : const Color(0x20FFFFFF),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    widget.isSimulatedActive ? Icons.science_rounded : Icons.science_outlined,
-                    size: 14,
-                    color: widget.isSimulatedActive ? const Color(0xFFC084FC) : const Color(0xFF94A3B8),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Demo Nodes',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: widget.isSimulatedActive ? Colors.white : const Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -524,16 +486,16 @@ class _MentimeterPeerMeshState extends State<MentimeterPeerMesh> with SingleTick
           ),
           const SizedBox(height: 6),
           Text(
-            'Turn on "Demo Nodes" above to test interactive P2P AirDrop & Chat simulation.',
+            'Ensure another node is active in the Radar portal to establish a secure P2P session.',
             style: GoogleFonts.plusJakartaSans(fontSize: 12, color: CyberTheme.textSecondary),
           ),
           const SizedBox(height: 16),
           CyberButton(
-            variant: CyberButtonVariant.whitePill,
+            variant: CyberButtonVariant.glassPill,
             height: 38,
-            icon: Icons.science_rounded,
-            onTap: () => widget.onToggleSimulated(true),
-            child: const Text('Spawn Simulated Nodes'),
+            icon: Icons.radar,
+            onTap: widget.onRefresh,
+            child: const Text('Rescan Mesh'),
           ),
         ],
       ),

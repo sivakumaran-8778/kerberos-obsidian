@@ -151,6 +151,16 @@ class P2PSessionService extends ChangeNotifier {
         _handleIncomingTextMessage(jsonEncode(payload));
       }
     };
+    _signaling.onSessionLeaveReceived = (senderId) {
+      if (_activePeer != null && _activePeer!.uuid.toLowerCase() == senderId.toLowerCase()) {
+        _handlePeerEndedSession();
+      }
+    };
+    _signaling.onP2PFileChunkReceived = (senderId, payload) {
+      if (_activePeer != null && _activePeer!.uuid.toLowerCase() == senderId.toLowerCase()) {
+        _handleIncomingSignalingChunk(payload);
+      }
+    };
     _webrtc.onDataChannelStateChanged = (state) {
       if (_activePeer != null && !_activePeer!.isSimulated) {
         if (state == RTCDataChannelState.RTCDataChannelOpen) {
@@ -159,8 +169,8 @@ class P2PSessionService extends ChangeNotifier {
           notifyListeners();
         } else if (state == RTCDataChannelState.RTCDataChannelClosed) {
           if (_sessionState == P2PSessionState.connected) {
-            _appendSystemNotice('Peer disconnected. Encrypted tunnel closed.');
-            _sessionState = P2PSessionState.disconnected;
+            // Do NOT disconnect! Fall back to secure signaling relay tunnel seamlessly
+            _appendSystemNotice('Direct DataChannel closed. Switched to secure signaling relay tunnel.');
             notifyListeners();
           }
         }
@@ -182,6 +192,126 @@ class P2PSessionService extends ChangeNotifier {
         onHandshakeDeclined?.call(peerName, error);
       }
     };
+  }
+
+  /// Handles incoming file chunks routed via Supabase realtime signaling fallback
+  void _handleIncomingSignalingChunk(Map<String, dynamic> payload) {
+    try {
+      final chunkIndex = payload['chunkIndex'] as int? ?? 0;
+      final totalChunks = payload['totalChunks'] as int? ?? 1;
+      final chunkB64 = payload['chunk']?.toString() ?? '';
+      if (chunkB64.isNotEmpty) {
+        final chunkBytes = base64Decode(chunkB64);
+        _incomingBytesBuffer.addAll(chunkBytes);
+      }
+
+      if (_incomingFilePending != null && _incomingFilePending!.fileSizeBytes > 0) {
+        _transferProgress = (_incomingBytesBuffer.length / _incomingFilePending!.fileSizeBytes).clamp(0.0, 1.0);
+        notifyListeners();
+      }
+
+      if (chunkIndex + 1 >= totalChunks) {
+        _finalizeIncomingFile();
+      }
+    } catch (e) {
+      print(">> [P2PSession] Error processing signaling chunk: $e");
+    }
+  }
+
+  /// Dispatches a control packet over DataChannel if open, or signaling relay fallback
+  Future<void> _dispatchPacket(Map<String, dynamic> packet) async {
+    if (_activePeer == null || _activePeer!.isSimulated) return;
+    bool sent = false;
+    if (_webrtc.isConnected) {
+      try {
+        await _webrtc.sendTextMessage(jsonEncode(packet));
+        sent = true;
+      } catch (e) {
+        print(">> [P2PSession] Direct DataChannel send error: $e. Using signaling fallback.");
+      }
+    }
+    if (!sent && _activePeer != null) {
+      try {
+        await _signaling.sendSignal(
+          targetId: _activePeer!.uuid,
+          type: 'p2p_chat_fallback',
+          payload: packet,
+        );
+      } catch (e) {
+        print(">> [P2PSession] Signaling packet send error: $e");
+      }
+    }
+  }
+
+  /// Transmits file bytes over direct WebRTC DataChannel, or falls back to chunked signaling relay
+  Future<void> _sendFileBytesWithFallback(String fileId, Uint8List fileBytes) async {
+    bool sent = false;
+    if (_webrtc.isConnected) {
+      try {
+        await _webrtc.sendFileBytes(fileBytes);
+        sent = true;
+      } catch (e) {
+        print(">> [P2PSession] Direct WebRTC file stream failed: $e. Falling back to signaling relay.");
+        _appendSystemNotice('Direct DataChannel congested; completing transfer via secure relay tunnel.');
+      }
+    }
+    if (!sent && _activePeer != null && !_activePeer!.isSimulated) {
+      await _sendFileBytesOverSignaling(fileId, fileBytes);
+    }
+  }
+
+  /// Streams chunks of a sealed asset over the Supabase signaling broadcast tunnel
+  Future<void> _sendFileBytesOverSignaling(String fileId, Uint8List fileBytes) async {
+    if (_activePeer == null) return;
+    const chunkSize = 24576; // 24 KB raw chunk
+    final totalChunks = (fileBytes.length / chunkSize).ceil();
+    if (totalChunks == 0) return;
+
+    for (int i = 0; i < totalChunks; i++) {
+      final start = i * chunkSize;
+      final end = (start + chunkSize > fileBytes.length) ? fileBytes.length : start + chunkSize;
+      final chunk = fileBytes.sublist(start, end);
+      final chunkB64 = base64Encode(chunk);
+
+      await _signaling.sendSignal(
+        targetId: _activePeer!.uuid,
+        type: 'p2p_file_chunk',
+        payload: {
+          'fileId': fileId,
+          'chunkIndex': i,
+          'totalChunks': totalChunks,
+          'chunk': chunkB64,
+        },
+      );
+
+      _transferProgress = ((i + 1) / totalChunks).clamp(0.0, 1.0);
+      notifyListeners();
+      await Future.delayed(const Duration(milliseconds: 30));
+    }
+  }
+
+  /// Called when the remote peer ends the session
+  void _handlePeerEndedSession() {
+    if (_sessionState != P2PSessionState.discovery) {
+      final peerName = _activePeer?.displayName ?? "Remote peer";
+      _appendSystemNotice('$peerName ended the session.');
+      _simulatedResponseTimer?.cancel();
+      _activePeer = null;
+      _messages.clear();
+      _transferQueue.clear();
+      _isProcessingQueue = false;
+      _isPeerTyping = false;
+      _isTransferring = false;
+      _isSealing = false;
+      if (_queueCompleter != null && !_queueCompleter!.isCompleted) {
+        _queueCompleter!.complete();
+      }
+      try {
+        _webrtc.closeConnection();
+      } catch (_) {}
+      _sessionState = P2PSessionState.discovery;
+      notifyListeners();
+    }
   }
 
   /// Initiates a P2P connection to a target peer
@@ -464,8 +594,8 @@ class P2PSessionService extends ChangeNotifier {
         return;
       }
 
-      // 3. Announce file transmission to remote peer via control packet
-      final startPacket = jsonEncode({
+      // 3. Announce file transmission to remote peer via dual-channel control packet
+      final startPacket = {
         'type': 'file_start',
         'fileId': fileAttachment.fileId,
         'fileName': fileAttachment.fileName,
@@ -476,11 +606,11 @@ class P2PSessionService extends ChangeNotifier {
         'isVoiceNote': isAudio,
         'isLiveRecorded': false,
         'durationSeconds': 0,
-      });
-      await _webrtc.sendTextMessage(startPacket);
+      };
+      await _dispatchPacket(startPacket);
 
-      // 4. Stream binary bytes in chunks over DataChannel
-      await _webrtc.sendFileBytes(fileBytes);
+      // 4. Stream binary bytes in chunks over DataChannel or signaling relay
+      await _sendFileBytesWithFallback(fileAttachment.fileId, fileBytes);
 
       // 5. Finalize transfer message
       _isTransferring = false;
@@ -492,9 +622,8 @@ class P2PSessionService extends ChangeNotifier {
       _isSealing = false;
       _isTransferring = false;
       _activeTransferringFileName = null;
-      _appendSystemNotice('File sealing / transfer fault: $e');
+      _appendSystemNotice('File sealing / transfer warning: $e');
       notifyListeners();
-      rethrow;
     }
   }
 
@@ -561,7 +690,7 @@ class P2PSessionService extends ChangeNotifier {
 
     try {
       // 2. Announce file transmission packet
-      final startPacket = jsonEncode({
+      final startPacket = {
         'type': 'file_start',
         'fileId': fileAttachment.fileId,
         'fileName': fileAttachment.fileName,
@@ -572,13 +701,13 @@ class P2PSessionService extends ChangeNotifier {
         'isVoiceNote': true,
         'isLiveRecorded': true,
         'durationSeconds': durationSeconds,
-      });
-      await _webrtc.sendTextMessage(startPacket);
+      };
+      await _dispatchPacket(startPacket);
 
-      // 3. Stream audio bytes over DataChannel
-      await _webrtc.sendFileBytes(audioBytes);
+      // 3. Stream audio bytes over DataChannel or signaling relay
+      await _sendFileBytesWithFallback(fileAttachment.fileId, audioBytes);
     } catch (e) {
-      _appendSystemNotice('Failed to transmit voice note: $e');
+      _appendSystemNotice('Voice note delivery warning: $e');
       notifyListeners();
     }
   }
@@ -640,9 +769,7 @@ class P2PSessionService extends ChangeNotifier {
           markMessagesAsSeen();
         }
       } else if (type == 'session_leave') {
-        _appendSystemNotice('${_activePeer?.displayName ?? "Remote peer"} ended the session.');
-        _sessionState = P2PSessionState.disconnected;
-        notifyListeners();
+        _handlePeerEndedSession();
       }
     } catch (_) {
       // Raw string fallback
@@ -775,12 +902,25 @@ class P2PSessionService extends ChangeNotifier {
 
   /// Cleanly closes the active P2P session and returns to discovery
   Future<void> disconnect() async {
-    if (_activePeer != null && !_activePeer!.isSimulated) {
+    final targetPeer = _activePeer;
+    if (targetPeer != null && !targetPeer.isSimulated) {
+      final leavePacket = {'type': 'session_leave'};
+      if (_webrtc.isConnected) {
+        try {
+          await _webrtc.sendTextMessage(jsonEncode(leavePacket));
+        } catch (_) {}
+      }
       try {
-        final leavePacket = jsonEncode({'type': 'session_leave'});
-        await _webrtc.sendTextMessage(leavePacket);
+        await _signaling.sendSignal(
+          targetId: targetPeer.uuid,
+          type: 'session_leave',
+          payload: leavePacket,
+        );
       } catch (_) {}
-      _webrtc.closeConnection();
+      await Future.delayed(const Duration(milliseconds: 50));
+      try {
+        _webrtc.closeConnection();
+      } catch (_) {}
     }
     _simulatedResponseTimer?.cancel();
     _activePeer = null;

@@ -49,6 +49,10 @@ class MockSignalingService extends Fake implements SignalingService {
   @override
   Function(String senderId, String senderName, Map<String, dynamic> messagePayload)? onP2PChatFallbackReceived;
   @override
+  Function(String senderId)? onSessionLeaveReceived;
+  @override
+  Function(String senderId, Map<String, dynamic> chunkPayload)? onP2PFileChunkReceived;
+  @override
   String get userEmail => 'agent@enclave.local';
   @override
   String get displayName => 'Test Agent';
@@ -210,9 +214,10 @@ void main() {
 
     test('User 2 accepts incoming handshake and remains connected through DataChannelConnecting to Open', () async {
       final mockWebRTC = MockWebRTCService();
+      final mockSignaling = MockSignalingService();
       final session = P2PSessionService(
         webrtc: mockWebRTC,
-        signaling: MockSignalingService(),
+        signaling: mockSignaling,
         ledger: MockLedgerService(),
       );
 
@@ -237,9 +242,13 @@ void main() {
       mockWebRTC.onDataChannelStateChanged?.call(RTCDataChannelState.RTCDataChannelOpen);
       expect(session.sessionState, P2PSessionState.connected);
 
-      // Only RTCDataChannelClosed disconnects
+      // RTCDataChannelClosed must NOT drop the session; it falls back to signaling relay tunnel
       mockWebRTC.onDataChannelStateChanged?.call(RTCDataChannelState.RTCDataChannelClosed);
-      expect(session.sessionState, P2PSessionState.disconnected);
+      expect(session.sessionState, P2PSessionState.connected);
+
+      // Receiving session_leave cleanly ends session
+      mockSignaling.onSessionLeaveReceived?.call('sender-user-1');
+      expect(session.sessionState, P2PSessionState.discovery);
 
       session.dispose();
     });
