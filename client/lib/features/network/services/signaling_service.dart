@@ -79,7 +79,30 @@ class SignalingService {
 
   Future<void> _trackCurrentPresence() async {
     if (!_isSubscribed || _channel == null) return;
-    final platformName = kIsWeb ? 'Web Enclave' : 'Windows Enclave';
+    final String platformName;
+    if (kIsWeb) {
+      platformName = 'Web Enclave';
+    } else {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.windows:
+          platformName = 'Windows Enclave';
+          break;
+        case TargetPlatform.macOS:
+          platformName = 'macOS Enclave';
+          break;
+        case TargetPlatform.linux:
+          platformName = 'Linux Enclave';
+          break;
+        case TargetPlatform.android:
+          platformName = 'Android Enclave';
+          break;
+        case TargetPlatform.iOS:
+          platformName = 'iOS Enclave';
+          break;
+        default:
+          platformName = 'Native Enclave';
+      }
+    }
     try {
       await _channel!.track({
         'uuid': _myUuid,

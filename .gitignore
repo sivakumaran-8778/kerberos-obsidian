@@ -1,2 +1,55 @@
+# Project Kerberos - Comprehensive Git Ignore
 
+# Environment & Secrets
 .env
+.env.local
+.env.production
+!.env.example
+
+# Flutter & Dart Build Artifacts
+client/.dart_tool/
+client/.packages
+client/build/
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+client/windows/flutter/ephemeral/
+client/linux/flutter/ephemeral/
+client/macos/Flutter/ephemeral/
+client/ios/Flutter/Generated.xcconfig
+client/ios/Flutter/flutter_export_environment.sh
+
+# Rust & Cargo Build Artifacts
+core/target/
+target/
+Cargo.lock.backup
+**/*.rs.bk
+
+# Compiled Binaries & Libraries
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.exp
+*.lib
+*.a
+*.o
+
+# Hive & Local Storage State
+*.hive
+*.lock
+
+# IDE & Editor Metadata
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.sublime-workspace
+*.sublime-project
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini

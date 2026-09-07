@@ -27,15 +27,38 @@ pub extern "C" fn sign_asset(
     // 2. C2PA JUMBF Injection (Core logic execution)
     // Note: This logic would invoke `c2pa::Builder::from_json(&claim_str)...`
     // Returning a simulated successful manifest string for architectural completeness
-    let manifest_json = format!("{{\"status\": \"sealed\", \"path\": \"{}\", \"claim\": \"{}\"}}", path_str, claim_str);
+    let claim_value: serde_json::Value = serde_json::from_str(&claim_str)
+        .unwrap_or_else(|_| serde_json::Value::String(claim_str));
+
+    let manifest_obj = serde_json::json!({
+        "status": "sealed",
+        "path": path_str,
+        "claim": claim_value
+    });
+
+    let manifest_json = manifest_obj.to_string();
+    let c_manifest = safe_cstring(&manifest_json);
+
+    if c_manifest.is_null() {
+        return create_error_result("Internal FFI Error: Failed to allocate manifest CString");
+    }
 
     let res = Box::new(C2paResult {
         success: true,
-        manifest_json: CString::new(manifest_json).unwrap().into_raw(),
+        manifest_json: c_manifest,
         error_msg: std::ptr::null_mut(),
     });
 
     Box::into_raw(res)
+}
+
+/// Helper method to safely allocate a CString without panicking on interior null bytes
+fn safe_cstring(s: &str) -> *mut c_char {
+    let sanitized: String = s.chars().filter(|&c| c != '\0').collect();
+    match CString::new(sanitized) {
+        Ok(c_str) => c_str.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 /// Helper method to safely allocate an error message string
@@ -43,7 +66,7 @@ fn create_error_result(msg: &str) -> *mut C2paResult {
     let res = Box::new(C2paResult {
         success: false,
         manifest_json: std::ptr::null_mut(),
-        error_msg: CString::new(msg).unwrap().into_raw(),
+        error_msg: safe_cstring(msg),
     });
     Box::into_raw(res)
 }

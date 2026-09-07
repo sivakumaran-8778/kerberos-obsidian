@@ -17,6 +17,8 @@ import '../../auth/providers/auth_providers.dart';
 import '../../provenance/providers/provenance_providers.dart';
 import '../../network/providers/network_providers.dart';
 import '../../../main.dart'; // for ledgerProvider
+import '../../ledger/services/ledger_service.dart';
+import '../../ledger/models/provenance_record.dart';
 import '../../verification/presentation/verification_page.dart';
 import '../../forensics/presentation/document_forensics_screen.dart';
 import '../../radar/presentation/radar_page.dart';
@@ -62,6 +64,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   bool _isProfileSuccessMessage = false;
   bool _nameInitialized = false;
 
+  // Dedicated Ledger search & state
+  final TextEditingController _ledgerSearchController = TextEditingController();
+  String _ledgerSearchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +92,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
+    _ledgerSearchController.dispose();
     super.dispose();
   }
 
@@ -100,6 +107,14 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
       }
     } else if (index == 3) {
       ref.read(signalingServiceProvider).setInRadar(true);
+    }
+
+    if (index == 4) {
+      // Eagerly reconcile cloud state when opening Ledger tab
+      try {
+        final profile = ref.read(userProfileProvider);
+        ref.read(ledgerProvider).syncWithCloud(profile.email);
+      } catch (_) {}
     }
 
     setState(() {
@@ -1015,7 +1030,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         badge: 'CRYPTOGRAPHIC AUDIT TRAIL',
                         description:
                             'Cryptographic tamper-evident provenance block history, verifying asset signature validity, perceptual hashes, and peer transmission logs.',
-                        child: _buildLedgerAuditTrail(isFullPage: true),
+                        child: _buildFullPageLedger(),
                       ),
 
                       // Page 5: Document Integrity & Forensics (Unsealed Blind Tamper Detection)
@@ -3451,180 +3466,843 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
     );
   }
 
-  // ==========================================
-  // BENTO CARD 3: IMMUTABLE ZERO-TRUST LEDGER
-  // ==========================================
-  Widget _buildLedgerAuditTrail({bool isFullPage = false}) {
-    final ledger = ref.watch(ledgerProvider);
-    final history = ledger.getHistory();
-    final displayCount = isFullPage ? history.length : (history.length > 5 ? 5 : history.length);
+  IconData _getFileIcon(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf':
+        return Icons.picture_as_pdf_rounded;
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+      case 'gif':
+        return Icons.image_rounded;
+      case 'json':
+      case 'xml':
+      case 'html':
+      case 'dart':
+        return Icons.code_rounded;
+      case 'mp4':
+      case 'mov':
+      case 'avi':
+        return Icons.video_file_rounded;
+      case 'mp3':
+      case 'wav':
+        return Icons.audio_file_rounded;
+      default:
+        return Icons.insert_drive_file_rounded;
+    }
+  }
 
-    return GlassContainer(
-      padding: const EdgeInsets.all(24),
-      borderColor: CyberTheme.border,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Color _getFileAccentColor(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf':
+        return const Color(0xFFF87171); // Red / Coral
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+        return const Color(0xFFC084FC); // Amethyst
+      case 'json':
+      case 'xml':
+      case 'dart':
+        return const Color(0xFF38BDF8); // Cyan
+      case 'mp4':
+      case 'mov':
+        return const Color(0xFFFBBF24); // Amber
+      default:
+        return const Color(0xFF818CF8); // Indigo
+    }
+  }
+
+  // ==========================================
+  // DEDICATED FULL-PAGE ZERO-TRUST LEDGER
+  // ==========================================
+  Widget _buildFullPageLedger() {
+    final ledger = ref.watch(ledgerProvider);
+    final userProfile = ref.watch(userProfileProvider);
+    final history = ledger.getHistory(filterEmail: userProfile.email);
+
+    final query = _ledgerSearchQuery.trim().toLowerCase();
+    final filteredHistory = query.isEmpty
+        ? history
+        : history.where((r) {
+            final name = r.filePath.split(RegExp(r'[\\/]')).last.toLowerCase();
+            final hash = r.originalFileHash.toLowerCase();
+            final owner = (r.ownerEmail ?? '').toLowerCase();
+            return name.contains(query) || hash.contains(query) || owner.contains(query);
+          }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 1. Control & Action Bar
+        GlassContainer(
+          padding: const EdgeInsets.all(22),
+          borderColor: CyberTheme.border,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: CyberTheme.indigo.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0x666366F1)),
-                    ),
-                    child: const Icon(Icons.receipt_long, color: CyberTheme.indigo, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              // Header Row: Status, Cross-Computer Realtime Badge & DELETE ALL Button
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 800;
+
+                  final leftInfo = Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        'IMMUTABLE ZERO-TRUST LEDGER',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: CyberTheme.textPrimary,
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: CyberTheme.indigo.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0x666366F1)),
                         ),
+                        child: const Icon(Icons.receipt_long_rounded, color: CyberTheme.indigo, size: 22),
                       ),
-                      Text(
-                        'AIR-GAPPED AES-256 ENCRYPTED AUDIT TRAIL',
-                        style: TextStyle(fontSize: 10, color: CyberTheme.textMuted, letterSpacing: 0.5),
+                      const SizedBox(width: 14),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'IMMUTABLE AUDIT TRAIL',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: CyberTheme.accentColor.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: CyberTheme.borderAccent),
+                                ),
+                                child: Text(
+                                  'AES-GCM-256 VAULT',
+                                  style: GoogleFonts.jetBrainsMono(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: CyberTheme.shardColor,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'All sealed assets and cryptographic tombstones synchronize automatically across all computers.',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11.5,
+                              color: CyberTheme.textMuted,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
+                  );
+
+                  final rightActions = Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      // Realtime Sync Status Indicator
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: CyberTheme.emerald.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(100),
+                          border: Border.all(color: CyberTheme.emerald.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: CyberTheme.emerald,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(color: Color(0x8010B981), blurRadius: 6, spreadRadius: 1),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              userProfile.email.isNotEmpty
+                                  ? 'REALTIME SYNC: ${userProfile.email}'
+                                  : 'REALTIME SYNC: ACTIVE',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: CyberTheme.emerald,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Manual Cloud Sync Button
+                      InkWell(
+                        onTap: () async {
+                          await ledger.syncWithCloud(userProfile.email);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                backgroundColor: CyberTheme.surfaceElevated,
+                                content: Text(
+                                  'Ledger synchronized with latest cloud state.',
+                                  style: TextStyle(color: CyberTheme.textPrimary, fontSize: 12),
+                                ),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(100),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: CyberTheme.surfaceElevated,
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(color: CyberTheme.border),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.sync_rounded, size: 14, color: CyberTheme.cyanLight),
+                              SizedBox(width: 5),
+                              Text(
+                                'REFRESH CLOUD',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: CyberTheme.cyanLight,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // High-Visibility DELETE ALL SEALED FILES Button
+                      InkWell(
+                        onTap: history.isEmpty ? null : () => _confirmClearTotalLedger(context, ledger),
+                        borderRadius: BorderRadius.circular(100),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: history.isEmpty
+                                ? null
+                                : const LinearGradient(
+                                    colors: [Color(0x35EF4444), Color(0x20EF4444)],
+                                  ),
+                            color: history.isEmpty ? Colors.white.withValues(alpha: 0.05) : null,
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(
+                              color: history.isEmpty
+                                  ? const Color(0x30FFFFFF)
+                                  : const Color(0xD0EF4444),
+                              width: 1.2,
+                            ),
+                            boxShadow: history.isEmpty
+                                ? null
+                                : const [
+                                    BoxShadow(
+                                      color: Color(0x30EF4444),
+                                      blurRadius: 10,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.delete_sweep_rounded,
+                                size: 15,
+                                color: history.isEmpty ? CyberTheme.textMuted : CyberTheme.coral,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'DELETE ALL SEALED FILES',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.6,
+                                  color: history.isEmpty ? CyberTheme.textMuted : CyberTheme.coral,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+
+                  if (isNarrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        leftInfo,
+                        const SizedBox(height: 14),
+                        rightActions,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(child: leftInfo),
+                      const SizedBox(width: 16),
+                      rightActions,
+                    ],
+                  );
+                },
+              ),
+
+              const SizedBox(height: 18),
+              const Divider(color: CyberTheme.border, height: 1),
+              const SizedBox(height: 16),
+
+              // Search Filter & Total Count Row
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: CyberTheme.surfaceElevated.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: CyberTheme.border),
+                      ),
+                      child: TextField(
+                        controller: _ledgerSearchController,
+                        onChanged: (val) {
+                          setState(() {
+                            _ledgerSearchQuery = val;
+                          });
+                        },
+                        style: const TextStyle(fontSize: 12, color: CyberTheme.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Search sealed files by filename, SHA-256 hash, or owner...',
+                          hintStyle: const TextStyle(fontSize: 12, color: CyberTheme.textMuted),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18, color: CyberTheme.textMuted),
+                          suffixIcon: _ledgerSearchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear_rounded, size: 16, color: CyberTheme.textMuted),
+                                  onPressed: () {
+                                    setState(() {
+                                      _ledgerSearchController.clear();
+                                      _ledgerSearchQuery = '';
+                                    });
+                                  },
+                                )
+                              : null,
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: CyberTheme.surfaceElevated,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: CyberTheme.border),
+                    ),
+                    child: Text(
+                      '${filteredHistory.length} OF ${history.length} SEALED',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: CyberTheme.cyanLight,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: CyberTheme.surfaceElevated,
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: CyberTheme.border),
-                ),
-                child: Text(
-                  '${history.length} SEALED ASSETS',
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: CyberTheme.cyanLight),
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: 20),
+        ),
 
-          if (history.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-              alignment: Alignment.center,
+        const SizedBox(height: 20),
+
+        // 2. Records List or Empty State
+        if (history.isEmpty)
+          GlassContainer(
+            padding: const EdgeInsets.symmetric(vertical: 56, horizontal: 24),
+            borderColor: CyberTheme.border,
+            child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
-                      color: CyberTheme.indigo.withValues(alpha: 0.1),
+                      color: CyberTheme.indigo.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
-                      border: Border.all(color: CyberTheme.border),
+                      border: Border.all(color: const Color(0x406366F1)),
                     ),
-                    child: const Icon(Icons.shield_outlined, color: CyberTheme.indigo, size: 28),
+                    child: const Icon(Icons.shield_outlined, color: CyberTheme.indigo, size: 38),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   const Text(
-                    'NO ASSETS RECORDED IN AIR-GAPPED LEDGER YET',
+                    'NO SEALED ASSETS IN AIR-GAPPED LEDGER',
                     style: TextStyle(
                       color: CyberTheme.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
                       letterSpacing: 0.8,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Cryptographically sealed assets and verified P2P transfers bound to your email account will appear here.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: CyberTheme.textMuted, fontSize: 11),
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Text(
+                      'Files cryptographically sealed in the Studio or received over WebRTC Radar channels will appear here with tamper-evident C2PA manifests, anchored to ${userProfile.email}.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: CyberTheme.textMuted, fontSize: 12, height: 1.5),
+                    ),
                   ),
-                ],
-              ),
-            )
-          else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: displayCount,
-              itemBuilder: (context, index) {
-                final record = history[index];
-                final fileName = record.filePath.split(RegExp(r'[\\/]')).last;
-                final owner = record.ownerEmail;
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: CyberTheme.surfaceElevated.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: CyberTheme.border),
-                  ),
-                  child: Row(
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.check_circle, color: CyberTheme.emerald, size: 16),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC084FC),
+                          foregroundColor: const Color(0xFF0C0814),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+                        ),
+                        icon: const Icon(Icons.upload_file_rounded, size: 16),
+                        label: const Text('SEAL AN ASSET IN STUDIO', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                        onPressed: () => _navigateToPage(1),
+                      ),
                       const SizedBox(width: 12),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 200),
-                        child: Text(
-                          fileName,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: CyberTheme.textPrimary),
-                          overflow: TextOverflow.ellipsis,
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: CyberTheme.cyanLight,
+                          side: const BorderSide(color: CyberTheme.border),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          'SHA-256: ${record.originalFileHash}',
-                          style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: CyberTheme.textMuted),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (owner != null && owner.isNotEmpty) ...[
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: CyberTheme.indigo.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: CyberTheme.indigo.withValues(alpha: 0.4)),
-                          ),
-                          child: Text(
-                            owner,
-                            style: const TextStyle(fontSize: 9, color: CyberTheme.shardColor, fontFamily: 'monospace'),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: CyberTheme.surface,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: CyberTheme.border),
-                        ),
-                        child: Text(
-                          record.timestamp.toLocal().toString().substring(0, 16),
-                          style: const TextStyle(fontSize: 10, color: CyberTheme.textMuted, fontFamily: 'monospace'),
-                        ),
+                        icon: const Icon(Icons.sync_rounded, size: 16),
+                        label: const Text('SYNC FROM CLOUD', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                        onPressed: () => ledger.syncWithCloud(userProfile.email),
                       ),
                     ],
                   ),
-                );
-              },
+                ],
+              ),
             ),
+          )
+        else if (filteredHistory.isEmpty)
+          GlassContainer(
+            padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+            borderColor: CyberTheme.border,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.search_off_rounded, color: CyberTheme.textMuted, size: 36),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No sealed assets found matching "$_ledgerSearchQuery"',
+                    style: const TextStyle(color: CyberTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    icon: const Icon(Icons.clear_rounded, size: 14),
+                    label: const Text('Clear Search Filter'),
+                    onPressed: () {
+                      setState(() {
+                        _ledgerSearchController.clear();
+                        _ledgerSearchQuery = '';
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: filteredHistory.length,
+            itemBuilder: (context, index) {
+              final record = filteredHistory[index];
+              final fileName = record.filePath.split(RegExp(r'[\\/]')).last;
+              final ext = fileName.split('.').last.toUpperCase();
+              final owner = record.ownerEmail ?? userProfile.email;
+              final accentColor = _getFileAccentColor(fileName);
+              final fileIcon = _getFileIcon(fileName);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: CyberTheme.surfaceElevated.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: CyberTheme.border),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x20000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Format Icon
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                      ),
+                      child: Icon(fileIcon, color: accentColor, size: 22),
+                    ),
+                    const SizedBox(width: 16),
+
+                    // File Details
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Top Line: File Name, Extension Badge, C2PA Badge, Owner Badge
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                fileName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+                                ),
+                                child: Text(
+                                  ext,
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: accentColor,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: CyberTheme.emerald.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: CyberTheme.emerald.withValues(alpha: 0.3)),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.verified_rounded, size: 10, color: CyberTheme.emerald),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      'C2PA SEALED',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: CyberTheme.emerald,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (owner.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: CyberTheme.indigo.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: CyberTheme.indigo.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(
+                                    owner,
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: CyberTheme.shardColor,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+
+                          // Second Line: SHA-256 Hash with 1-click Copy
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'SHA-256: ${record.originalFileHash}',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontFamily: 'monospace',
+                                    color: CyberTheme.textMuted,
+                                    letterSpacing: 0.3,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: () {
+                                  Clipboard.setData(ClipboardData(text: record.originalFileHash));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('SHA-256 hash copied to clipboard!'),
+                                      duration: Duration(seconds: 1),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(3),
+                                  child: Icon(Icons.copy_rounded, size: 12, color: CyberTheme.cyanLight),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+
+                          // Third Line: Timestamp and Manifest URI
+                          Row(
+                            children: [
+                              const Icon(Icons.schedule_rounded, size: 11, color: CyberTheme.textMuted),
+                              const SizedBox(width: 4),
+                              Text(
+                                record.timestamp.toLocal().toString().substring(0, 16),
+                                style: const TextStyle(fontSize: 10, color: CyberTheme.textMuted, fontFamily: 'monospace'),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'MANIFEST: ${record.c2paManifestUri}',
+                                  style: const TextStyle(fontSize: 9.5, color: CyberTheme.textMuted, fontFamily: 'monospace'),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+
+                    // High-Visibility Individual DELETE Button
+                    InkWell(
+                      onTap: () => _confirmDeleteSingleRecord(context, ledger, record, fileName),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: CyberTheme.coral.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CyberTheme.coral.withValues(alpha: 0.45)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.delete_outline_rounded, size: 16, color: CyberTheme.coral),
+                            SizedBox(width: 6),
+                            Text(
+                              'DELETE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                                color: CyberTheme.coral,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+
+
+  Future<void> _confirmDeleteSingleRecord(
+    BuildContext context,
+    LedgerService ledger,
+    ProvenanceRecord record,
+    String fileName,
+  ) async {
+    final ownerEmail = record.ownerEmail ?? ref.read(userProfileProvider).email;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: CyberTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: CyberTheme.coral),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: CyberTheme.coral, size: 22),
+            SizedBox(width: 10),
+            Text(
+              'DELETE SEALED RECORD',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: CyberTheme.textPrimary, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete "$fileName" from your immutable ledger?\n\n'
+          '• SHA-256: ${record.originalFileHash}\n'
+          '• Cryptographic tombstone will be registered.\n'
+          '• Deletion will IMMEDIATELY propagate and reflect across all computers logged into this account ($ownerEmail).',
+          style: const TextStyle(fontSize: 12, color: CyberTheme.textMuted, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('CANCEL', style: TextStyle(color: CyberTheme.textMuted, fontSize: 11)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CyberTheme.coral,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('DELETE RECORD', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
+
+    if (confirmed == true) {
+      final success = await ledger.deleteRecord(record.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: CyberTheme.surfaceElevated,
+            content: Text(
+              success
+                  ? 'Record deleted and tombstone synchronized across all computers.'
+                  : 'Failed to delete record.',
+              style: const TextStyle(color: CyberTheme.textPrimary, fontSize: 12),
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmClearTotalLedger(
+    BuildContext context,
+    LedgerService ledger,
+  ) async {
+    final userEmail = ref.read(userProfileProvider).email;
+    final totalCount = ledger.getHistory(filterEmail: userEmail).length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: CyberTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: CyberTheme.coral),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: CyberTheme.coral, size: 24),
+            SizedBox(width: 10),
+            Text(
+              'WIPE ALL SEALED FILES',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: CyberTheme.coral, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+        content: Text(
+          'CRITICAL WARNING: This action will permanently wipe all $totalCount sealed records from your audit trail.\n\n'
+          '• All local entries in your AES-256 vault will be purged.\n'
+          '• A ledger wipe epoch will be recorded and synchronized to your account.\n'
+          '• All sealed files will be deleted from ALL computers logged into this account ($userEmail).\n\n'
+          'This action cannot be undone.',
+          style: const TextStyle(fontSize: 12, color: CyberTheme.textMuted, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('CANCEL', style: TextStyle(color: CyberTheme.textMuted, fontSize: 11)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CyberTheme.coral,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('WIPE ALL RECORDS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ledger.clearTotalHistory(filterEmail: userEmail);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: CyberTheme.surfaceElevated,
+            content: Text(
+              'Total ledger history wiped across all synchronized computers.',
+              style: TextStyle(color: CyberTheme.textPrimary, fontSize: 12),
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
 

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/provenance_record.dart';
 
 /// Zero-Trust local ledger.
@@ -13,6 +14,14 @@ class LedgerService extends ChangeNotifier {
   static const String _boxName = 'secure_provenance_ledger';
   late Box<ProvenanceRecord> _box;
   SupabaseClient? _supabase;
+
+  // Distributed tombstone & sync state
+  final Set<String> _deletedHashes = {};
+  DateTime? _ledgerClearedAt;
+  RealtimeChannel? _realtimeSyncChannel;
+  Completer<void> _realtimeSubCompleter = Completer<void>();
+  String? _currentSubscribedEmail;
+  final String _localDeviceId = const Uuid().v4();
 
   LedgerService({SupabaseClient? supabaseClient}) : _supabase = supabaseClient;
 
@@ -105,6 +114,9 @@ class LedgerService extends ChangeNotifier {
 
     final targetHash = record.originalFileHash.trim().toLowerCase();
     final targetBase = _cleanFileName(record.filePath).toLowerCase();
+
+    // Re-sealing removes any prior tombstone
+    _deletedHashes.remove(targetHash);
 
     // Zero-Trust Guard: Check if a record with the same filename was already sealed by this user.
     // If the file was tampered with (divergent hash), PRESERVE the original sealed record and do not overwrite it!
@@ -218,15 +230,27 @@ class LedgerService extends ChangeNotifier {
         continue;
       }
 
+      final hash = r.originalFileHash.trim().toLowerCase();
+      // Zero-Trust: suppress tombstoned or cleared records
+      if (_deletedHashes.contains(hash)) {
+        continue;
+      }
+      if (_ledgerClearedAt != null && r.timestamp.toUtc().isBefore(_ledgerClearedAt!)) {
+        continue;
+      }
+
       if (targetEmail != null && targetEmail.isNotEmpty) {
         final recordOwner = r.ownerEmail?.trim().toLowerCase();
-        // Return records owned by this email, or legacy unassigned records
-        if (recordOwner != null && recordOwner != targetEmail) {
+        // Return records owned by this email, or legacy/offline unassigned records
+        final isMatch = recordOwner == null ||
+            recordOwner.isEmpty ||
+            recordOwner == 'offline@enclave.local' ||
+            recordOwner == targetEmail;
+        if (!isMatch) {
           continue;
         }
       }
 
-      final hash = r.originalFileHash.trim().toLowerCase();
       if (!seenHashes.contains(hash)) {
         seenHashes.add(hash);
         uniqueRecords.add(r);
@@ -243,18 +267,318 @@ class LedgerService extends ChangeNotifier {
     return history.first;
   }
 
+  /// Deletes a single provenance record by its ID or SHA-256 hash.
+  /// Stores a distributed tombstone and synchronizes the deletion across all devices logged into the same account.
+  Future<bool> deleteRecord(String id) async {
+    if (!_box.isOpen) return false;
+
+    ProvenanceRecord? targetRecord;
+    dynamic targetKey;
+
+    for (final key in _box.keys) {
+      final r = _box.get(key);
+      if (r != null && (r.id == id || key.toString() == id || r.originalFileHash.trim().toLowerCase() == id.trim().toLowerCase())) {
+        targetRecord = r;
+        targetKey = key;
+        break;
+      }
+    }
+
+    if (targetRecord == null && targetKey == null) {
+      return false;
+    }
+
+    final hash = targetRecord?.originalFileHash.trim().toLowerCase() ?? id.trim().toLowerCase();
+    final ownerEmail = targetRecord?.ownerEmail?.trim().toLowerCase() ?? 
+        _supabase?.auth.currentUser?.email?.trim().toLowerCase();
+
+    // 1. Remove from local encrypted Hive box
+    if (targetKey != null) {
+      await _box.delete(targetKey);
+    }
+    _deletedHashes.add(hash);
+
+    // 2. Sync tombstones & remaining records to cloud metadata
+    if (_supabase != null && ownerEmail != null && ownerEmail.isNotEmpty) {
+      await _syncLocalRecordsToCloud(ownerEmail);
+      await _broadcastDeletion(ownerEmail, hash);
+    }
+
+    notifyListeners();
+    print(">> [LedgerService] Deleted record '$id' (hash: $hash). Tombstone registered.");
+    return true;
+  }
+
+  /// Completely wipes ledger history for the current user.
+  /// Sets a ledger clear epoch timestamp so all other devices signed into the same email account
+  /// will purge their records upon receiving real-time broadcast or during next cloud sync.
+  Future<void> clearTotalHistory({String? filterEmail}) async {
+    if (!_box.isOpen) return;
+
+    final targetEmail = filterEmail?.trim().toLowerCase() ?? 
+        _supabase?.auth.currentUser?.email?.trim().toLowerCase();
+
+    // 1. Purge all records belonging to this user
+    final keysToDelete = <dynamic>[];
+    for (final key in _box.keys) {
+      final r = _box.get(key);
+      if (r == null) continue;
+      if (targetEmail == null || targetEmail.isEmpty || r.ownerEmail?.trim().toLowerCase() == targetEmail) {
+        keysToDelete.add(key);
+      }
+    }
+
+    for (final k in keysToDelete) {
+      await _box.delete(k);
+    }
+
+    _deletedHashes.clear();
+    _ledgerClearedAt = DateTime.now().toUtc();
+
+    // 2. Synchronize cleared state to Supabase account metadata
+    if (_supabase != null && targetEmail != null && targetEmail.isNotEmpty) {
+      try {
+        await _supabase!.auth.updateUser(
+          UserAttributes(data: {
+            'sealed_ledger_records': <dynamic>[],
+            'deleted_ledger_hashes': <String>[],
+            'ledger_cleared_at': _ledgerClearedAt!.toIso8601String(),
+          }),
+        );
+        print(">> [LedgerService] Cloud metadata wiped for $targetEmail (epoch: ${_ledgerClearedAt!.toIso8601String()})");
+      } catch (e) {
+        print(">> [LedgerService] Notice: Error updating cloud metadata during total clear: $e");
+      }
+      await _broadcastClearTotal(targetEmail, _ledgerClearedAt!);
+    }
+
+    notifyListeners();
+  }
+
+  /// Helper to obtain this client's unique node device ID
+  String _getDeviceId() {
+    try {
+      if (Hive.isBoxOpen('kerberos_device_identity')) {
+        final box = Hive.box('kerberos_device_identity');
+        final stored = box.get('device_uuid')?.toString();
+        if (stored != null && stored.trim().isNotEmpty) {
+          return stored.trim();
+        }
+      }
+    } catch (_) {}
+    return _localDeviceId;
+  }
+
+  /// Subscribes to a Supabase Realtime broadcast channel dedicated to cross-device ledger sync.
+  void initRealtimeSync(String email) {
+    if (_supabase == null) return;
+    final cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.isEmpty) return;
+    if (_currentSubscribedEmail == cleanEmail && _realtimeSyncChannel != null) return;
+
+    _currentSubscribedEmail = cleanEmail;
+    final safeEmailChannel = cleanEmail.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final channelName = 'ledger_sync_$safeEmailChannel';
+
+    try {
+      _realtimeSyncChannel?.unsubscribe();
+    } catch (_) {}
+
+    _realtimeSubCompleter = Completer<void>();
+    _realtimeSyncChannel = _supabase!.channel(channelName);
+
+    _realtimeSyncChannel!.onBroadcast(
+      event: 'delete_single',
+      callback: (payload) async {
+        final senderId = payload['sender_device_id']?.toString();
+        final targetHash = payload['hash']?.toString().trim().toLowerCase();
+        if (senderId == _getDeviceId() || targetHash == null || targetHash.isEmpty) return;
+
+        print(">> [LedgerService] Realtime sync: received remote delete_single for hash $targetHash");
+        _deletedHashes.add(targetHash);
+
+        final toDelete = <dynamic>[];
+        for (final k in _box.keys) {
+          final r = _box.get(k);
+          if (r != null && r.originalFileHash.trim().toLowerCase() == targetHash) {
+            toDelete.add(k);
+          }
+        }
+        for (final k in toDelete) {
+          await _box.delete(k);
+        }
+        notifyListeners();
+      },
+    );
+
+    _realtimeSyncChannel!.onBroadcast(
+      event: 'clear_total',
+      callback: (payload) async {
+        final senderId = payload['sender_device_id']?.toString();
+        final clearedAtStr = payload['cleared_at']?.toString();
+        if (senderId == _getDeviceId() || clearedAtStr == null) return;
+
+        print(">> [LedgerService] Realtime sync: received remote clear_total at $clearedAtStr");
+        final clearedAt = DateTime.tryParse(clearedAtStr)?.toUtc() ?? DateTime.now().toUtc();
+        _ledgerClearedAt = clearedAt;
+        _deletedHashes.clear();
+
+        final toDelete = <dynamic>[];
+        for (final k in _box.keys) {
+          final r = _box.get(k);
+          if (r != null && (cleanEmail.isEmpty || r.ownerEmail?.trim().toLowerCase() == cleanEmail)) {
+            toDelete.add(k);
+          }
+        }
+        for (final k in toDelete) {
+          await _box.delete(k);
+        }
+        notifyListeners();
+      },
+    );
+
+    _realtimeSyncChannel!.subscribe((status, [error]) {
+      print(">> [LedgerService] Realtime channel status: $status (error: $error)");
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        if (!_realtimeSubCompleter.isCompleted) {
+          _realtimeSubCompleter.complete();
+        }
+      } else if (status == RealtimeSubscribeStatus.closed || status == RealtimeSubscribeStatus.channelError) {
+        if (_realtimeSubCompleter.isCompleted) {
+          _realtimeSubCompleter = Completer<void>();
+        }
+      }
+    });
+  }
+
+  Future<void> _broadcastDeletion(String email, String hash) async {
+    initRealtimeSync(email);
+    if (_realtimeSyncChannel == null) return;
+
+    if (!_realtimeSubCompleter.isCompleted) {
+      try {
+        await _realtimeSubCompleter.future.timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
+    try {
+      final res = await _realtimeSyncChannel!.sendBroadcastMessage(
+        event: 'delete_single',
+        payload: {
+          'sender_device_id': _getDeviceId(),
+          'hash': hash,
+          'email': email,
+          'timestamp': DateTime.now().toUtc().toIso8601String(),
+        },
+      );
+      print(">> [LedgerService] Broadcasted delete_single for $hash (status: $res)");
+    } catch (e) {
+      print(">> [LedgerService] Realtime broadcast notice: $e");
+    }
+  }
+
+  Future<void> _broadcastClearTotal(String email, DateTime clearedAt) async {
+    initRealtimeSync(email);
+    if (_realtimeSyncChannel == null) return;
+
+    if (!_realtimeSubCompleter.isCompleted) {
+      try {
+        await _realtimeSubCompleter.future.timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
+    try {
+      final res = await _realtimeSyncChannel!.sendBroadcastMessage(
+        event: 'clear_total',
+        payload: {
+          'sender_device_id': _getDeviceId(),
+          'cleared_at': clearedAt.toIso8601String(),
+          'email': email,
+        },
+      );
+      print(">> [LedgerService] Broadcasted clear_total (status: $res)");
+    } catch (e) {
+      print(">> [LedgerService] Realtime broadcast notice: $e");
+    }
+  }
+
   /// Synchronizes ledger records between local Hive storage and Supabase user metadata.
-  /// When a user logs in on Computer 2 with their email, this populates Computer 2's ledger
-  /// with the files sealed previously on Computer 1 without duplicates.
   Future<void> syncWithUserAccount(User user) async {
     if (!_box.isOpen) return;
     final userEmail = user.email?.trim().toLowerCase();
     if (userEmail == null || userEmail.isEmpty) return;
 
+    await syncWithCloud(userEmail, userMeta: user.userMetadata);
+  }
+
+  /// Core cross-computer cloud synchronization with tombstone reconciliation.
+  Future<void> syncWithCloud(String userEmail, {Map<String, dynamic>? userMeta}) async {
+    if (!_box.isOpen) return;
+    final cleanEmail = userEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty) return;
+
+    // Activate real-time mesh subscription for instant cross-machine notification
+    initRealtimeSync(cleanEmail);
+
+    Map<String, dynamic>? meta = userMeta;
+    if (meta == null && _supabase != null) {
+      try {
+        final userResponse = await _supabase!.auth.getUser();
+        meta = userResponse.user?.userMetadata ?? _supabase!.auth.currentUser?.userMetadata;
+      } catch (_) {
+        meta = _supabase!.auth.currentUser?.userMetadata;
+      }
+    } else {
+      meta ??= _supabase?.auth.currentUser?.userMetadata;
+    }
     bool localModified = false;
 
-    // 1. Pull sealed records stored in user metadata
-    final meta = user.userMetadata;
+    // 1. Reconcile total history wipe epoch
+    final cloudClearedAtStr = meta?['ledger_cleared_at']?.toString();
+    if (cloudClearedAtStr != null) {
+      final cloudClearedAt = DateTime.tryParse(cloudClearedAtStr)?.toUtc();
+      if (cloudClearedAt != null) {
+        if (_ledgerClearedAt == null || cloudClearedAt.isAfter(_ledgerClearedAt!)) {
+          _ledgerClearedAt = cloudClearedAt;
+          final keysToPurge = <dynamic>[];
+          for (final k in _box.keys) {
+            final r = _box.get(k);
+            if (r != null && r.timestamp.toUtc().isBefore(cloudClearedAt)) {
+              keysToPurge.add(k);
+            }
+          }
+          for (final k in keysToPurge) {
+            await _box.delete(k);
+            localModified = true;
+          }
+        }
+      }
+    }
+
+    // 2. Reconcile remote tombstones (deleted hashes)
+    final remoteTombstones = meta?['deleted_ledger_hashes'];
+    if (remoteTombstones is List) {
+      for (final h in remoteTombstones) {
+        if (h != null) {
+          _deletedHashes.add(h.toString().trim().toLowerCase());
+        }
+      }
+    }
+
+    // Purge local records matching tombstoned hashes (prevents zombie resurrection)
+    final zombieKeys = <dynamic>[];
+    for (final k in _box.keys) {
+      final r = _box.get(k);
+      if (r != null && _deletedHashes.contains(r.originalFileHash.trim().toLowerCase())) {
+        zombieKeys.add(k);
+      }
+    }
+    for (final k in zombieKeys) {
+      await _box.delete(k);
+      localModified = true;
+    }
+
+    // 3. Reconcile remote sealed records
     final remoteRaw = meta?['sealed_ledger_records'];
     final Set<String> knownIds = {};
     final Set<String> knownHashes = {};
@@ -266,9 +590,12 @@ class LedgerService extends ChangeNotifier {
             final record = ProvenanceRecord.fromJson(Map<String, dynamic>.from(item));
             if (record.id.isNotEmpty && record.id != 'sample-satellite-01' && record.filePath != 'satellite_recon_delta_09.png') {
               final hash = record.originalFileHash.trim().toLowerCase();
-              if (knownHashes.contains(hash)) {
-                continue; // Skip duplicate remote entries for same file hash
-              }
+
+              // Zero-Trust: Ignore tombstoned or cleared records
+              if (_deletedHashes.contains(hash)) continue;
+              if (_ledgerClearedAt != null && record.timestamp.toUtc().isBefore(_ledgerClearedAt!)) continue;
+
+              if (knownHashes.contains(hash)) continue;
               knownHashes.add(hash);
               knownIds.add(record.id);
 
@@ -300,7 +627,7 @@ class LedgerService extends ChangeNotifier {
       }
     }
 
-    // 2. Check for local records owned by this user (or unowned) that are not yet in cloud
+    // 4. Reconcile local records owned by this user (or unowned) that are not yet in cloud
     bool hasNewLocalForCloud = false;
     final localRecords = _box.values.where((r) {
       return r.id != 'sample-satellite-01' && r.filePath != 'satellite_recon_delta_09.png';
@@ -309,20 +636,21 @@ class LedgerService extends ChangeNotifier {
     for (final r in localRecords) {
       final owner = r.ownerEmail?.trim().toLowerCase();
       final hash = r.originalFileHash.trim().toLowerCase();
+      if (_deletedHashes.contains(hash)) continue;
+
       if (owner == null) {
-        // Tag unassigned local records with the active user email
-        final updated = r.copyWith(ownerEmail: userEmail);
+        final updated = r.copyWith(ownerEmail: cleanEmail);
         await _box.put(r.id, updated);
         hasNewLocalForCloud = true;
         localModified = true;
-      } else if (owner == userEmail && !knownHashes.contains(hash)) {
+      } else if (owner == cleanEmail && !knownHashes.contains(hash)) {
         hasNewLocalForCloud = true;
       }
     }
 
-    // 3. If local storage had records not yet recorded in the cloud, push reconciled list
+    // 5. Push reconciled state if local storage had new assets
     if (hasNewLocalForCloud && _supabase != null) {
-      await _syncLocalRecordsToCloud(userEmail);
+      await _syncLocalRecordsToCloud(cleanEmail);
     }
 
     if (localModified) {
@@ -330,7 +658,7 @@ class LedgerService extends ChangeNotifier {
     }
   }
 
-  /// Uploads the current user's sealed records to their Supabase account metadata without duplicates.
+  /// Uploads the current user's sealed records and active tombstones to their Supabase account metadata.
   Future<void> _syncLocalRecordsToCloud(String email) async {
     if (_supabase == null || !_box.isOpen) return;
     final cleanEmail = email.trim().toLowerCase();
@@ -340,9 +668,11 @@ class LedgerService extends ChangeNotifier {
       final Map<String, ProvenanceRecord> uniqueRecordsByHash = {};
       for (final r in _box.values) {
         if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') continue;
+        final hash = r.originalFileHash.trim().toLowerCase();
+        if (_deletedHashes.contains(hash)) continue;
+
         final owner = r.ownerEmail?.trim().toLowerCase();
         if (owner == null || owner == cleanEmail) {
-          final hash = r.originalFileHash.trim().toLowerCase();
           uniqueRecordsByHash[hash] = r.copyWith(ownerEmail: cleanEmail);
         }
       }
@@ -350,9 +680,13 @@ class LedgerService extends ChangeNotifier {
       final recordsJson = uniqueRecordsByHash.values.map((r) => r.toJson()).toList();
 
       await _supabase!.auth.updateUser(
-        UserAttributes(data: {'sealed_ledger_records': recordsJson}),
+        UserAttributes(data: {
+          'sealed_ledger_records': recordsJson,
+          'deleted_ledger_hashes': _deletedHashes.toList(),
+          if (_ledgerClearedAt != null) 'ledger_cleared_at': _ledgerClearedAt!.toIso8601String(),
+        }),
       );
-      print(">> [LedgerService] Cloud sync successful: ${recordsJson.length} sealed records bound to $cleanEmail");
+      print(">> [LedgerService] Cloud sync successful: ${recordsJson.length} sealed records, ${_deletedHashes.length} tombstones bound to $cleanEmail");
     } catch (e) {
       print(">> [LedgerService] Cloud sync notice (offline or transient): $e");
     }

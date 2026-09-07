@@ -5,10 +5,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:flutter/foundation.dart';
+import 'package:cross_file/cross_file.dart';
 import '../../../shared/theme/cyber_theme.dart';
 import '../../../shared/widgets/cyber_button.dart';
 import '../../../shared/widgets/glass_container.dart';
 import '../../../main.dart'; // for ledgerProvider
+import '../../ledger/models/provenance_record.dart';
 import '../models/document_forensic_models.dart';
 import '../services/document_forensic_service.dart';
 
@@ -57,7 +60,14 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        final bytes = file.bytes;
+        Uint8List? bytes = file.bytes;
+        if (bytes == null && file.path != null) {
+          try {
+            bytes = await XFile(file.path!).readAsBytes();
+          } catch (e) {
+            debugPrint('Error reading file from path: $e');
+          }
+        }
         if (bytes != null && bytes.isNotEmpty) {
           await _processBytes(bytes, file.name);
         }
@@ -72,24 +82,63 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       _isAnalyzing = true;
     });
 
-    // Provide smooth perceptual scan latency
-    await Future.delayed(const Duration(milliseconds: 600));
+    try {
+      // Yield to let UI update and show the scan animation
+      await Future.delayed(const Duration(milliseconds: 100));
 
-    final ledger = ref.read(ledgerProvider);
-    final history = ledger.getHistory();
+      final ledger = ref.read(ledgerProvider);
+      final history = ledger.getHistory();
 
-    final report = DocumentForensicService.analyzeDocument(
-      bytes: bytes,
-      fileName: fileName,
-      ledgerHistory: history,
-    );
+      // Run heavy forensic computation in background isolate to prevent UI thread lock
+      final report = await compute(
+        _runForensicAnalysisCompute,
+        _ForensicAnalysisJob(
+          bytes: bytes,
+          fileName: fileName,
+          ledgerHistory: history,
+        ),
+      );
 
-    if (mounted) {
-      setState(() {
-        _report = report;
-        _isAnalyzing = false;
-        _hoveredElaIndex = null;
-      });
+      if (mounted) {
+        setState(() {
+          _report = report;
+          _isAnalyzing = false;
+          _hoveredElaIndex = null;
+        });
+      }
+    } catch (e, stack) {
+      debugPrint('Background forensic compute error: $e\n$stack');
+      // Direct fallback in case background isolate has serialization issues
+      try {
+        final ledger = ref.read(ledgerProvider);
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: bytes,
+          fileName: fileName,
+          ledgerHistory: ledger.getHistory(),
+        );
+        if (mounted) {
+          setState(() {
+            _report = report;
+            _isAnalyzing = false;
+            _hoveredElaIndex = null;
+          });
+        }
+      } catch (fatalError) {
+        if (mounted) {
+          setState(() {
+            _isAnalyzing = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: CyberTheme.surfaceElevated,
+              content: Text(
+                'Notice: Could not parse file "$fileName": $fatalError',
+                style: const TextStyle(color: CyberTheme.coral, fontSize: 12),
+              ),
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -2378,4 +2427,24 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       ),
     );
   }
+}
+
+class _ForensicAnalysisJob {
+  final Uint8List bytes;
+  final String fileName;
+  final List<ProvenanceRecord>? ledgerHistory;
+
+  const _ForensicAnalysisJob({
+    required this.bytes,
+    required this.fileName,
+    required this.ledgerHistory,
+  });
+}
+
+DocumentForensicReport _runForensicAnalysisCompute(_ForensicAnalysisJob job) {
+  return DocumentForensicService.analyzeDocument(
+    bytes: job.bytes,
+    fileName: job.fileName,
+    ledgerHistory: job.ledgerHistory,
+  );
 }

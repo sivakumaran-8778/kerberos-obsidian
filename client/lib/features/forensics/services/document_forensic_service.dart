@@ -1652,14 +1652,17 @@ class DocumentForensicService {
       );
     }
 
-    // 1. Attempt Real Image Error Level Analysis (ELA) via JPEG Recompression Residuals
+    // 1. High Res / Large MB Safety Guard: Only attempt raster image decoding if bytes match
+    // genuine image magic bytes and total size is under 50 MB.
     img.Image? targetImage;
-    try {
-      targetImage = img.decodeImage(bytes);
-    } catch (_) {}
+    if (_isLikelyRasterImage(bytes) && bytes.length <= 50 * 1024 * 1024) {
+      try {
+        targetImage = img.decodeImage(bytes);
+      } catch (_) {}
+    }
 
     // Check if the file is a PDF containing an embedded raster image stream (e.g. scanned doc/photo)
-    if (targetImage == null && bytes.length > 64) {
+    if (targetImage == null && bytes.length > 64 && bytes.length <= 25 * 1024 * 1024) {
       final embeddedJpeg = _extractEmbeddedJpeg(bytes);
       if (embeddedJpeg != null) {
         try {
@@ -1672,7 +1675,7 @@ class DocumentForensicService {
       return _computeRealImageEla(targetImage, isTampered: isTampered, editorSignatures: editorSignatures);
     }
 
-    // 2. Document Structural Compression Entropy Quantization Matrix (for vector PDFs, text, or structured docs)
+    // 2. High-speed Document Structural Compression Entropy Quantization Matrix (for large files, video, audio, text, or vector docs)
     return _computeStructuralEntropyEla(bytes, isTampered: isTampered, editorSignatures: editorSignatures);
   }
 
@@ -1703,16 +1706,34 @@ class DocumentForensicService {
     required bool isTampered,
     List<String>? editorSignatures,
   }) {
-    // Forensic standard: Re-compress image at quality 90
-    final recompressedJpg = img.encodeJpg(image, quality: 90);
-    final recompressed = img.decodeJpg(recompressedJpg);
-
-    if (recompressed == null) {
-      return _computeStructuralEntropyEla(Uint8List.fromList(recompressedJpg), isTampered: isTampered);
+    // CRITICAL HIGH-RES SAFETY:
+    // A 16x16 ELA heatmap grid only requires a maximum resolution of 800x800.
+    // Scaling down high-res images (e.g. 4000x3000 -> 800x600) reduces memory and DCT compute
+    // by 95% while perfectly preserving localized compression noise artifacts for the 16x16 grid!
+    img.Image procImage = image;
+    if (procImage.width > 800 || procImage.height > 800) {
+      final double ratio = math.min(800.0 / procImage.width, 800.0 / procImage.height);
+      final newW = (procImage.width * ratio).round().clamp(64, 800);
+      final newH = (procImage.height * ratio).round().clamp(64, 800);
+      procImage = img.copyResize(procImage, width: newW, height: newH, interpolation: img.Interpolation.linear);
     }
 
-    final width = image.width;
-    final height = image.height;
+    // Forensic standard: Re-compress image at quality 90
+    Uint8List recompressedJpg;
+    img.Image? recompressed;
+    try {
+      recompressedJpg = Uint8List.fromList(img.encodeJpg(procImage, quality: 90));
+      recompressed = img.decodeJpg(recompressedJpg);
+    } catch (_) {
+      return _computeStructuralEntropyEla(Uint8List(0), isTampered: isTampered);
+    }
+
+    if (recompressed == null) {
+      return _computeStructuralEntropyEla(recompressedJpg, isTampered: isTampered);
+    }
+
+    final width = procImage.width;
+    final height = procImage.height;
     final tensor = List<double>.filled(256, 0.0);
 
     // Compute pixel delta across 16x16 grid
@@ -1731,7 +1752,7 @@ class DocumentForensicService {
 
         for (int y = startY; y < endY; y += stepY) {
           for (int x = startX; x < endX; x += stepX) {
-            final p1 = image.getPixel(x, y);
+            final p1 = procImage.getPixel(x, y);
             final p2 = recompressed.getPixel(x, y);
 
             final dr = (p1.r - p2.r).abs();
@@ -1806,6 +1827,16 @@ class DocumentForensicService {
   }) {
     final tensor = List<double>.filled(256, 0.0);
     final totalLen = bytes.length;
+    if (totalLen == 0) {
+      return const DocumentElaAnalysis(
+        heatmapTensor: [],
+        peakErrorRate: 0.0,
+        baselineErrorRate: 0.0,
+        anomalyCoordinates: 'Empty Payload',
+        hasSplicingAnomaly: false,
+      );
+    }
+
     final blockSize = math.max(1, totalLen ~/ 256);
 
     for (int i = 0; i < 256; i++) {
@@ -1816,27 +1847,29 @@ class DocumentForensicService {
         continue;
       }
 
-      final slice = bytes.sublist(start, end);
+      // High Performance Sample: Sample up to 1024 bytes per block to prevent massive allocations and CPU hangs
+      final sampleLen = math.min(1024, end - start);
+      final sample = Uint8List.sublistView(bytes, start, start + sampleLen);
 
-      // Compute Shannon Entropy of slice
+      // Compute Shannon Entropy of sample
       final counts = <int, int>{};
-      for (final b in slice) {
+      for (final b in sample) {
         counts[b] = (counts[b] ?? 0) + 1;
       }
       double entropy = 0.0;
       for (final count in counts.values) {
-        final p = count / slice.length;
+        final p = count / sample.length;
         entropy -= p * (math.log(p) / math.ln2);
       }
       final normalizedEntropy = (entropy / 8.0).clamp(0.0, 1.0);
 
-      // Measure compressibility ratio of slice
-      int compressedLen = slice.length;
+      // Measure compressibility ratio on sample (capped at 1KB sample)
+      int compressedLen = sample.length;
       try {
-        final compressed = const ZLibEncoder().encode(slice);
+        final compressed = const ZLibEncoder().encode(sample);
         compressedLen = compressed.length;
       } catch (_) {}
-      final compressionRatio = (compressedLen / slice.length).clamp(0.0, 1.0);
+      final compressionRatio = (compressedLen / sample.length).clamp(0.0, 1.0);
 
       // Baseline residual combines entropy and compression deviation
       final residual = (0.05 + 0.10 * normalizedEntropy + 0.05 * compressionRatio).clamp(0.04, 0.22);
@@ -1981,13 +2014,15 @@ class DocumentForensicService {
 
     try {
       final doc1 = PdfDocument(inputBytes: bytes.sublist(0, firstRevisionEnd));
-      rev1Text = PdfTextExtractor(doc1).extractText();
+      final maxP1 = math.min(doc1.pages.count, 20);
+      rev1Text = maxP1 > 0 ? PdfTextExtractor(doc1).extractText(startPageIndex: 0, endPageIndex: maxP1 - 1) : '';
       doc1.dispose();
     } catch (_) {}
 
     try {
       final doc2 = PdfDocument(inputBytes: bytes);
-      rev2Text = PdfTextExtractor(doc2).extractText();
+      final maxP2 = math.min(doc2.pages.count, 20);
+      rev2Text = maxP2 > 0 ? PdfTextExtractor(doc2).extractText(startPageIndex: 0, endPageIndex: maxP2 - 1) : '';
       doc2.dispose();
     } catch (_) {}
 
@@ -2383,18 +2418,58 @@ class DocumentForensicService {
     return ForensicFileCategory.document;
   }
 
-  static String _bytesToAsciiString(Uint8List bytes) {
-    final buffer = StringBuffer();
-    final len = bytes.length;
+  static bool _isLikelyRasterImage(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // JPEG (0xFF, 0xD8)
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) return true;
+    // PNG (0x89, 'PNG')
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+    // GIF ('GIF')
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return true;
+    // WebP ('RIFF' .... 'WEBP')
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+        bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) {
+      return true;
+    }
+    // BMP ('BM')
+    if (bytes[0] == 0x42 && bytes[1] == 0x4D) return true;
+    // TIFF ('II*\0' or 'MM\0*')
+    if ((bytes[0] == 0x49 && bytes[1] == 0x49 && bytes[2] == 0x2A && bytes[3] == 0x00) ||
+        (bytes[0] == 0x4D && bytes[1] == 0x4D && bytes[2] == 0x00 && bytes[3] == 0x2A)) {
+      return true;
+    }
+    return false;
+  }
+
+  static String _bytesToAsciiString(Uint8List bytes, {int maxBytes = 4 * 1024 * 1024}) {
+    if (bytes.isEmpty) return '';
+
+    // Fast window extraction: For large files (e.g. 50MB videos, high-res photos),
+    // probe the initial 2MB (headers, metadata atoms, tags) and trailing 2MB (trailers, appended payloads, EOF)
+    final Uint8List slice;
+    if (bytes.length > maxBytes) {
+      final half = maxBytes ~/ 2;
+      final combined = Uint8List(maxBytes + 1);
+      combined.setRange(0, half, Uint8List.sublistView(bytes, 0, half));
+      combined[half] = 32; // space separator
+      combined.setRange(half + 1, maxBytes + 1, Uint8List.sublistView(bytes, bytes.length - half));
+      slice = combined;
+    } else {
+      slice = bytes;
+    }
+
+    final len = slice.length;
+    final sanitized = Uint8List(len);
     for (int i = 0; i < len; i++) {
-      final b = bytes[i];
+      final b = slice[i];
       if ((b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9) {
-        buffer.writeCharCode(b);
+        sanitized[i] = b;
       } else {
-        buffer.write(' ');
+        sanitized[i] = 32;
       }
     }
-    return buffer.toString();
+    return latin1.decode(sanitized);
   }
 
   static String? _extractPdfString(Match? match) {

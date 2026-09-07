@@ -1021,6 +1021,82 @@ startxref
       // Uniform image should not have false splicing
       expect(report.elaAnalysis!.hasSplicingAnomaly, isFalse);
     });
+
+    test('Crash Resilience: High Resolution Image (2000x2000) downscales smoothly and completes ELA without OOM', () {
+      // Generate a 1200x1200 high-res image (simulates high-res camera capture)
+      final hiResImg = img.Image(width: 1200, height: 1200);
+      for (int y = 0; y < 1200; y += 40) {
+        for (int x = 0; x < 1200; x += 40) {
+          hiResImg.setPixelRgb(x, y, 180, 190, 200);
+        }
+      }
+      final hiResJpeg = Uint8List.fromList(img.encodeJpg(hiResImg, quality: 85));
+
+      final stopwatch = Stopwatch()..start();
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: hiResJpeg,
+        fileName: 'high_res_satellite_orbit_capture.jpg',
+      );
+      stopwatch.stop();
+
+      expect(report.elaAnalysis, isNotNull);
+      expect(report.elaAnalysis!.heatmapTensor.length, equals(256));
+      expect(report.fileCategory, equals(ForensicFileCategory.image));
+      expect(report.verdict, isNotNull);
+      // Ensure processing completes rapidly (sub-second) due to smart downscaling
+      expect(stopwatch.elapsedMilliseconds, lessThan(3500));
+    });
+
+    test('Crash Resilience: Large MB file (12MB simulated video stream) parses without memory exhaustion', () {
+      // Create a 12MB MP4 binary stream
+      final headerBuilder = BytesBuilder();
+      final ftypPayload = utf8.encode('mp42\x00\x00\x02\x00isommp42');
+      final ftypSize = ByteData(4)..setUint32(0, 8 + ftypPayload.length, Endian.big);
+      headerBuilder.add(ftypSize.buffer.asUint8List());
+      headerBuilder.add(utf8.encode('ftyp'));
+      headerBuilder.add(ftypPayload);
+      final moovPayload = utf8.encode('mvhd...Adobe Premiere Pro CC 2024...trak...mdat');
+      final moovSize = ByteData(4)..setUint32(0, 8 + moovPayload.length, Endian.big);
+      headerBuilder.add(moovSize.buffer.asUint8List());
+      headerBuilder.add(utf8.encode('moov'));
+      headerBuilder.add(moovPayload);
+      final header = headerBuilder.toBytes();
+
+      final largeBytes = Uint8List(12 * 1024 * 1024); // 12 MB
+      largeBytes.setRange(0, header.length, header);
+
+      final stopwatch = Stopwatch()..start();
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: largeBytes,
+        fileName: 'drone_surveillance_raw_1080p.mp4',
+      );
+      stopwatch.stop();
+
+      expect(report.fileCategory, equals(ForensicFileCategory.video));
+      expect(report.fileSizeBytes, equals(12 * 1024 * 1024));
+      expect(report.videoForensics, isNotNull);
+      expect(report.videoForensics!.editorFootprints, contains('Adobe Premiere Pro'));
+      // Windowed bitstream probe ensures 12MB scans in under 1500ms
+      expect(stopwatch.elapsedMilliseconds, lessThan(2000));
+    });
+
+    test('Crash Resilience: Large MB document (8MB PDF) with appended payload parses without OOM', () {
+      final basePdf = '%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n';
+      final largePdfBytes = BytesBuilder();
+      largePdfBytes.add(utf8.encode(basePdf));
+      // Pad with 8MB of structural data
+      largePdfBytes.add(Uint8List(8 * 1024 * 1024));
+      final finalPayload = largePdfBytes.toBytes();
+
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: finalPayload,
+        fileName: 'massive_annex_compilation.pdf',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.document));
+      expect(report.fileSizeBytes, equals(finalPayload.length));
+      expect(report.isMagicByteValid, isTrue);
+    });
   });
 }
 

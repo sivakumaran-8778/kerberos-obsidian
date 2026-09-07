@@ -24,14 +24,62 @@ class C2paEngine {
   late final SignAssetDart _signAsset;
   late final FreeC2paResultDart _freeC2paResult;
 
-  C2paEngine() {
+  C2paEngine([DynamicLibrary? customLib]) {
     // Dynamic loading configuration for edge environments (Mobile/Desktop)
-    _lib = Platform.isAndroid 
-        ? DynamicLibrary.open('libcore.so') 
-        : DynamicLibrary.process(); 
+    _lib = customLib ?? _resolvePlatformLibrary();
 
     _signAsset = _lib.lookupFunction<SignAssetC, SignAssetDart>('sign_asset');
     _freeC2paResult = _lib.lookupFunction<FreeC2paResultC, FreeC2paResultDart>('free_c2pa_result');
+  }
+
+  static DynamicLibrary _resolvePlatformLibrary() {
+    if (Platform.isAndroid) {
+      return DynamicLibrary.open('libcore.so');
+    } else if (Platform.isWindows) {
+      final candidates = [
+        'core.dll',
+        '../core/target/release/core.dll',
+        '../core/target/debug/core.dll',
+        'core/target/release/core.dll',
+        'core/target/debug/core.dll',
+      ];
+      for (final path in candidates) {
+        try {
+          return DynamicLibrary.open(path);
+        } catch (_) {}
+      }
+      try {
+        return DynamicLibrary.process();
+      } catch (_) {
+        return DynamicLibrary.open('core.dll');
+      }
+    } else if (Platform.isMacOS) {
+      final candidates = [
+        'libcore.dylib',
+        '../core/target/release/libcore.dylib',
+        '../core/target/debug/libcore.dylib',
+      ];
+      for (final path in candidates) {
+        try {
+          return DynamicLibrary.open(path);
+        } catch (_) {}
+      }
+      return DynamicLibrary.process();
+    } else if (Platform.isLinux) {
+      final candidates = [
+        'libcore.so',
+        '../core/target/release/libcore.so',
+        '../core/target/debug/libcore.so',
+      ];
+      for (final path in candidates) {
+        try {
+          return DynamicLibrary.open(path);
+        } catch (_) {}
+      }
+      return DynamicLibrary.process();
+    } else {
+      return DynamicLibrary.process();
+    }
   }
 
   /// Injects C2PA JUMBF payload into the asset.

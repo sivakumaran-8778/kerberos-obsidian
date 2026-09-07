@@ -4,8 +4,8 @@
 
 CREATE TABLE signaling_channel (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id UUID NOT NULL REFERENCES auth.users(id),
-    target_id UUID NOT NULL REFERENCES auth.users(id),
+    sender_id UUID NOT NULL,
+    target_id UUID NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('offer', 'answer', 'ice')),
     payload JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()

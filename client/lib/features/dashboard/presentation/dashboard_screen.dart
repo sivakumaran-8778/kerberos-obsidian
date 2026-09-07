@@ -120,11 +120,11 @@ class SteganographyHeatMapRenderer extends CustomPainter {
       // Since it's forensic light theme, we use subtle blues/reds
       final intensity = vector[i];
       if (intensity < 0.3) {
-        paint.color = kNeomorphicBaseColor.withOpacity(0.8);
+        paint.color = kNeomorphicBaseColor.withValues(alpha: 0.8);
       } else if (intensity < 0.7) {
-        paint.color = kAccentColor.withOpacity(intensity);
+        paint.color = kAccentColor.withValues(alpha: intensity);
       } else {
-        paint.color = kAlertColor.withOpacity(intensity); // Anomalies appear red
+        paint.color = kAlertColor.withValues(alpha: intensity); // Anomalies appear red
       }
       
       canvas.drawRect(rect, paint);
@@ -132,7 +132,7 @@ class SteganographyHeatMapRenderer extends CustomPainter {
     
     // Overlay a subtle scanline grid to enhance the forensic aesthetic
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.2)
+      ..color = Colors.white.withValues(alpha: 0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
       
