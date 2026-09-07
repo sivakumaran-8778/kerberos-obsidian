@@ -12,7 +12,7 @@ param(
     [string]$Action = "status",
 
     [Parameter()]
-    [string]$Remote = "obsidian",
+    [string]$Remote = "origin",
 
     [Parameter()]
     [string]$Branch = "main"
