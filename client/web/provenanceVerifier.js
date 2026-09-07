@@ -126,6 +126,9 @@ export async function evaluateProvenance(fileBuffer, parsedC2paManifest) {
     };
 }
 
+// Bind to window for Flutter Dart JS Interop
+window.evaluateProvenance = evaluateProvenance;
+
 // ============================================================================
 // MOCK UI IMPLEMENTATION - RED ALERT TERMINAL DASHBOARD
 // ============================================================================

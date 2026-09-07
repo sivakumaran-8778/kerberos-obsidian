@@ -168,6 +168,11 @@ export async function verifyRedactionProof(redactedFileBuffer, zkProof, publicSi
     }
 }
 
+// Bind to window for Flutter Dart JS Interop
+window.generateRedactionProof = generateRedactionProof;
+window.verifyRedactionProof = verifyRedactionProof;
+window.runZkRedactMockUI = runZkRedactMockUI;
+
 
 // ============================================================================
 // MOCK UI IMPLEMENTATION
