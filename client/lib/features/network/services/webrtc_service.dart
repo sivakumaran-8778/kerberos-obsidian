@@ -17,6 +17,9 @@ class WebRTCService {
   RTCIceConnectionState? _currentIceState;
   String? _lastTechnicalError;
 
+  Timer? _iceBatchTimer;
+  final List<Map<String, dynamic>> _outboundIceCandidates = [];
+
   // Auto-Accept toggle & incoming request hook
   bool autoAccept = false;
   Function(String senderId, String senderName, String senderEmail, Map<String, dynamic> offerPayload)? onIncomingOfferRequest;
@@ -111,6 +114,9 @@ class WebRTCService {
 
     if (_peerConnection != null) {
       _isRemoteDescriptionSet = false;
+      _iceBatchTimer?.cancel();
+      _iceBatchTimer = null;
+      _outboundIceCandidates.clear();
       try {
         await _peerConnection?.close();
       } catch (_) {}
@@ -120,20 +126,9 @@ class WebRTCService {
     onStatusUpdate?.call("Initializing cryptographic peer connection...");
     _peerConnection = await createPeerConnection(_iceConfiguration);
 
-    // Trickle ICE: stream discovered local candidates to the remote peer
+    // Trickle ICE: stream discovered local candidates in debounced batches to avoid rate-limiting
     _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-      if (candidate.candidate == null || candidate.candidate!.trim().isEmpty) {
-        return; // End of candidates
-      }
-      _signaling.sendSignal(
-        targetId: targetId,
-        type: 'ice',
-        payload: {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        },
-      );
+      _queueOutboundIceCandidate(targetId, candidate);
     };
 
     // Monitor ICE Connection State
@@ -303,23 +298,74 @@ class WebRTCService {
     }
   }
 
-  /// Both: Handles incoming remote ICE candidates with queueing support to prevent race conditions.
+  void _queueOutboundIceCandidate(String targetId, RTCIceCandidate candidate) {
+    if (candidate.candidate == null || candidate.candidate!.trim().isEmpty) {
+      return;
+    }
+    _outboundIceCandidates.add({
+      'candidate': candidate.candidate,
+      'sdpMid': candidate.sdpMid,
+      'sdpMLineIndex': candidate.sdpMLineIndex,
+    });
+
+    _iceBatchTimer?.cancel();
+    _iceBatchTimer = Timer(const Duration(milliseconds: 60), () {
+      _flushOutboundIceCandidates(targetId);
+    });
+  }
+
+  void _flushOutboundIceCandidates(String targetId) {
+    _iceBatchTimer?.cancel();
+    _iceBatchTimer = null;
+    if (_outboundIceCandidates.isEmpty) return;
+
+    final batch = List<Map<String, dynamic>>.from(_outboundIceCandidates);
+    _outboundIceCandidates.clear();
+
+    _signaling.sendSignal(
+      targetId: targetId,
+      type: 'ice',
+      payload: {
+        'candidates': batch,
+        'candidate': batch.first['candidate'],
+        'sdpMid': batch.first['sdpMid'],
+        'sdpMLineIndex': batch.first['sdpMLineIndex'],
+      },
+    );
+  }
+
+  /// Both: Handles incoming remote ICE candidates (single or batched) with queueing support to prevent race conditions.
   Future<void> _handleIceCandidate(Map<String, dynamic> payload) async {
-    final rawCandidate = payload['candidate'] as String?;
-    if (rawCandidate == null || rawCandidate.trim().isEmpty) return;
+    final List<Map<String, dynamic>> candidatesToProcess = [];
 
-    final sdpMid = payload['sdpMid'] as String?;
-    final sdpMLineIndex = payload['sdpMLineIndex'] as int?;
-    final candidate = RTCIceCandidate(rawCandidate, sdpMid, sdpMLineIndex);
-
-    if (_isRemoteDescriptionSet && _peerConnection != null) {
-      try {
-        await _peerConnection!.addCandidate(candidate);
-      } catch (e) {
-        print(">> [WebRTC] Notice: Skipped redundant ICE candidate: $e");
+    if (payload['candidates'] is List) {
+      final list = payload['candidates'] as List;
+      for (final item in list) {
+        if (item is Map) {
+          candidatesToProcess.add(Map<String, dynamic>.from(item));
+        }
       }
-    } else {
-      _remoteCandidatesQueue.add(candidate);
+    } else if (payload['candidate'] is String) {
+      candidatesToProcess.add(payload);
+    }
+
+    for (final candMap in candidatesToProcess) {
+      final rawCandidate = candMap['candidate'] as String?;
+      if (rawCandidate == null || rawCandidate.trim().isEmpty) continue;
+
+      final sdpMid = candMap['sdpMid'] as String?;
+      final sdpMLineIndex = candMap['sdpMLineIndex'] as int?;
+      final candidate = RTCIceCandidate(rawCandidate, sdpMid, sdpMLineIndex);
+
+      if (_isRemoteDescriptionSet && _peerConnection != null) {
+        try {
+          await _peerConnection!.addCandidate(candidate);
+        } catch (e) {
+          print(">> [WebRTC] Notice: Skipped redundant ICE candidate: $e");
+        }
+      } else {
+        _remoteCandidatesQueue.add(candidate);
+      }
     }
   }
 
@@ -453,6 +499,9 @@ class WebRTCService {
   /// Closes the current connection and resets candidate queues.
   void closeConnection() {
     _isRemoteDescriptionSet = false;
+    _iceBatchTimer?.cancel();
+    _iceBatchTimer = null;
+    _outboundIceCandidates.clear();
     _remoteCandidatesQueue.clear();
     _currentTargetId = null;
     _currentIceState = null;

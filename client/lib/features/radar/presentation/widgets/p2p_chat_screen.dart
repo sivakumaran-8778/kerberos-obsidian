@@ -51,8 +51,9 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
     _voiceNoteService.addListener(_handleVoiceNoteUpdate);
     _textController.addListener(_onTextChanged);
 
-    // Mark chat screen as actively visible so seen receipts are sent accurately
+    // Mark chat screen as actively visible and acknowledge any pending unseen messages once
     widget.sessionService.setChatScreenVisible(true);
+    widget.sessionService.markMessagesAsSeen();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -66,6 +67,9 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
     // Only send read receipts when app is active and foregrounded
     final isForeground = state == AppLifecycleState.resumed;
     widget.sessionService.setChatScreenVisible(isForeground);
+    if (isForeground) {
+      widget.sessionService.markMessagesAsSeen();
+    }
   }
 
   @override
@@ -98,7 +102,6 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
 
   void _handleSessionUpdate() {
     if (mounted) {
-      widget.sessionService.markMessagesAsSeen();
       setState(() {});
       _scrollToBottom();
     }
@@ -135,17 +138,18 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
       _replyingToMessage = null;
     });
 
-    await widget.sessionService.sendTextMessage(
+    _scrollToBottom();
+    _chatFocusNode.requestFocus();
+
+    // Optimistic zero-latency dispatch: UI responds instantaneously
+    unawaited(widget.sessionService.sendTextMessage(
       text,
       replyToId: replyingTo?.id,
       replyToSender: replyingTo?.senderName,
       replyToText: replyingTo?.fileAttachment != null
           ? '📎 ${replyingTo!.fileAttachment!.fileName}'
           : replyingTo?.text,
-    );
-
-    _scrollToBottom();
-    _chatFocusNode.requestFocus();
+    ));
   }
 
   Future<void> _startVoiceRecording() async {

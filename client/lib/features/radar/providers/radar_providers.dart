@@ -7,9 +7,9 @@ import '../services/p2p_session_service.dart';
 
 /// Provider for the active P2PSessionService
 final p2pSessionServiceProvider = ChangeNotifierProvider<P2PSessionService>((ref) {
-  final webrtc = ref.watch(webRtcServiceProvider);
-  final signaling = ref.watch(signalingServiceProvider);
-  final ledger = ref.watch(ledgerProvider);
+  final webrtc = ref.read(webRtcServiceProvider);
+  final signaling = ref.read(signalingServiceProvider);
+  final ledger = ref.read(ledgerProvider);
 
   return P2PSessionService(
     webrtc: webrtc,

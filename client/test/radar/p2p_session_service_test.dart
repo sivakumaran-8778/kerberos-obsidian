@@ -1,12 +1,17 @@
 import 'dart:typed_data';
 import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:kerberos_client/features/radar/models/radar_models.dart';
+import 'package:kerberos_client/features/radar/providers/radar_providers.dart';
 import 'package:kerberos_client/features/radar/services/p2p_session_service.dart';
+import 'package:kerberos_client/features/network/providers/network_providers.dart';
 import 'package:kerberos_client/features/network/services/webrtc_service.dart';
 import 'package:kerberos_client/features/network/services/signaling_service.dart';
 import 'package:kerberos_client/features/ledger/services/ledger_service.dart';
+import 'package:kerberos_client/main.dart';
 
 class MockWebRTCService extends Fake implements WebRTCService {
   @override
@@ -28,8 +33,12 @@ class MockWebRTCService extends Fake implements WebRTCService {
   @override
   Function()? onHandshakeAccepted;
 
+  final List<String> sentTextMessages = [];
+
   @override
-  Future<void> sendTextMessage(String text) async {}
+  Future<void> sendTextMessage(String text) async {
+    sentTextMessages.add(text);
+  }
 
   @override
   Future<void> sendFileBytes(Uint8List bytes) async {}
@@ -57,17 +66,27 @@ class MockSignalingService extends Fake implements SignalingService {
   @override
   String get displayName => 'Test Agent';
 
+  final List<Map<String, dynamic>> sentSignals = [];
+
   @override
   Future<void> sendSignal({
     required String targetId,
     required String type,
     required Map<String, dynamic> payload,
-  }) async {}
+  }) async {
+    sentSignals.add({
+      'targetId': targetId,
+      'type': type,
+      'payload': payload,
+    });
+  }
 }
 
-class MockLedgerService extends Fake implements LedgerService {
+class MockLedgerService extends Fake with ChangeNotifier implements LedgerService {
   @override
-  Future<void> addRecord(dynamic record) async {}
+  Future<void> addRecord(dynamic record) async {
+    notifyListeners();
+  }
 }
 
 void main() {
@@ -571,6 +590,86 @@ void main() {
       expect(session.activePeer?.displayName, 'User Two');
 
       session.dispose();
+    });
+
+    test('markMessagesAsSeen does not dispatch packets when there are no unseen peer messages (ping-pong prevention)', () async {
+      final mockWebRTC = MockWebRTCService();
+      final mockSignaling = MockSignalingService();
+      final session = P2PSessionService(
+        webrtc: mockWebRTC,
+        signaling: mockSignaling,
+        ledger: MockLedgerService(),
+      );
+
+      const remotePeer = RadarPeer(
+        uuid: 'peer-loop-test',
+        displayName: 'Test Remote',
+        email: 'test@enclave.local',
+        platform: 'Windows Enclave',
+        isSimulated: false,
+      );
+
+      session.handleIncomingSessionAccepted(remotePeer);
+      session.setChatScreenVisible(false);
+
+      // Initially no unseen chat messages - calling markMessagesAsSeen should send NOTHING
+      await session.markMessagesAsSeen();
+      expect(mockWebRTC.sentTextMessages.where((m) => m.contains('"seen"')), isEmpty);
+      expect(mockSignaling.sentSignals.where((s) => s['payload']['type'] == 'seen'), isEmpty);
+
+      // Remote peer sends an incoming message while screen is not visible
+      mockWebRTC.onTextMessageReceived?.call('{"type":"chat","id":"msg-1","text":"Hello Enclave"}');
+      expect(session.messages.length, 2); // System notice + chat message
+      expect(session.messages.last.isSeen, isFalse);
+
+      // User enters chat screen and markMessagesAsSeen is triggered
+      session.setChatScreenVisible(true);
+      await session.markMessagesAsSeen();
+      expect(session.messages.last.isSeen, isTrue);
+      final sentCount1 = mockWebRTC.sentTextMessages.where((m) => m.contains('"seen"')).length;
+      expect(sentCount1, 1);
+
+      // Subsequent calls to markMessagesAsSeen (e.g. from UI update loops or keystrokes) must be ignored
+      await session.markMessagesAsSeen();
+      await session.markMessagesAsSeen();
+      final sentCount2 = mockWebRTC.sentTextMessages.where((m) => m.contains('"seen"')).length;
+      expect(sentCount2, 1); // Absolutely no redundant packets sent!
+
+      session.dispose();
+    });
+
+    test('p2pSessionServiceProvider preserves active session when ledgerProvider notifies (ref.read verification)', () async {
+      final mockLedger = MockLedgerService();
+      final container = ProviderContainer(
+        overrides: [
+          webRtcServiceProvider.overrideWithValue(MockWebRTCService()),
+          signalingServiceProvider.overrideWithValue(MockSignalingService()),
+          ledgerProvider.overrideWith((ref) => mockLedger),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // Read session service and establish a connected session
+      final session1 = container.read(p2pSessionServiceProvider);
+      const peer = RadarPeer(
+        uuid: 'peer-retain-test',
+        displayName: 'Retained Peer',
+        email: 'retain@enclave.local',
+        platform: 'macOS Node',
+        isSimulated: false,
+      );
+      session1.handleIncomingSessionAccepted(peer);
+      expect(session1.sessionState, P2PSessionState.connected);
+      expect(session1.activePeer?.displayName, 'Retained Peer');
+
+      // Add a sealed file record to the ledger (which calls notifyListeners)
+      await mockLedger.addRecord('test-record');
+
+      // The active session service MUST be the exact same instance and remain connected
+      final session2 = container.read(p2pSessionServiceProvider);
+      expect(identical(session1, session2), isTrue);
+      expect(session2.sessionState, P2PSessionState.connected);
+      expect(session2.activePeer?.displayName, 'Retained Peer');
     });
   });
 }

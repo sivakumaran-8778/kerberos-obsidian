@@ -110,28 +110,40 @@ class P2PSessionService extends ChangeNotifier {
     }
   }
 
-  /// Sends a read receipt packet indicating all messages were viewed (only if screen is visible)
+  /// Sends a read receipt packet indicating all messages were viewed (only if screen is visible and unseen incoming messages exist)
   Future<void> markMessagesAsSeen() async {
     if (!_isChatScreenVisible) return;
-    if (_activePeer != null && !_activePeer!.isSimulated) {
-      final packet = {
-        'type': 'seen',
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-      if (_webrtc.isConnected) {
-        try {
-          await _webrtc.sendTextMessage(jsonEncode(packet));
-          return;
-        } catch (_) {}
+    if (_activePeer == null || _activePeer!.isSimulated) return;
+
+    // Guard against redundant/ping-pong signaling: only dispatch if there are genuinely unseen incoming messages
+    final hasUnseen = _messages.any((m) => !m.isSelf && !m.isSeen && !m.isSystemNotice);
+    if (!hasUnseen) return;
+
+    // Locally mark them as seen immediately so subsequent events don't re-dispatch
+    for (int i = 0; i < _messages.length; i++) {
+      if (!_messages[i].isSelf && !_messages[i].isSeen) {
+        _messages[i] = _messages[i].copyWith(isSeen: true, seenAt: DateTime.now());
       }
+    }
+    notifyListeners();
+
+    final packet = {
+      'type': 'seen',
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    if (_webrtc.isConnected) {
       try {
-        await _signaling.sendSignal(
-          targetId: _activePeer!.uuid,
-          type: 'p2p_chat_fallback',
-          payload: packet,
-        );
+        await _webrtc.sendTextMessage(jsonEncode(packet));
+        return;
       } catch (_) {}
     }
+    try {
+      await _signaling.sendSignal(
+        targetId: _activePeer!.uuid,
+        type: 'p2p_chat_fallback',
+        payload: packet,
+      );
+    } catch (_) {}
   }
 
   Function(String peerName, String reason)? onHandshakeDeclined;
@@ -263,30 +275,44 @@ class P2PSessionService extends ChangeNotifier {
   /// Streams chunks of a sealed asset over the Supabase signaling broadcast tunnel
   Future<void> _sendFileBytesOverSignaling(String fileId, Uint8List fileBytes) async {
     if (_activePeer == null) return;
-    const chunkSize = 24576; // 24 KB raw chunk
+    const chunkSize = 16384; // 16 KB raw chunk (~21.8 KB base64, safe under all Realtime limits)
     final totalChunks = (fileBytes.length / chunkSize).ceil();
     if (totalChunks == 0) return;
 
     for (int i = 0; i < totalChunks; i++) {
+      if (_activePeer == null) break;
       final start = i * chunkSize;
       final end = (start + chunkSize > fileBytes.length) ? fileBytes.length : start + chunkSize;
       final chunk = fileBytes.sublist(start, end);
       final chunkB64 = base64Encode(chunk);
 
-      await _signaling.sendSignal(
-        targetId: _activePeer!.uuid,
-        type: 'p2p_file_chunk',
-        payload: {
-          'fileId': fileId,
-          'chunkIndex': i,
-          'totalChunks': totalChunks,
-          'chunk': chunkB64,
-        },
-      );
+      bool delivered = false;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+          await _signaling.sendSignal(
+            targetId: _activePeer!.uuid,
+            type: 'p2p_file_chunk',
+            payload: {
+              'fileId': fileId,
+              'chunkIndex': i,
+              'totalChunks': totalChunks,
+              'chunk': chunkB64,
+            },
+          );
+          delivered = true;
+          break;
+        } catch (e) {
+          await Future.delayed(const Duration(milliseconds: 60));
+        }
+      }
+
+      if (!delivered) {
+        print(">> [P2PSession] Warning: failed to send chunk $i of $totalChunks over relay");
+      }
 
       _transferProgress = ((i + 1) / totalChunks).clamp(0.0, 1.0);
       notifyListeners();
-      await Future.delayed(const Duration(milliseconds: 30));
+      await Future.delayed(const Duration(milliseconds: 40));
     }
   }
 
@@ -497,7 +523,7 @@ class P2PSessionService extends ChangeNotifier {
     try {
       final fileName = file.name.isNotEmpty
           ? file.name
-          : (file.path.isNotEmpty ? p.basename(file.path) : 'sealed_asset.bin');
+          : (kIsWeb ? 'sealed_asset.bin' : (file.path.isNotEmpty ? p.basename(file.path) : 'sealed_asset.bin'));
       final name = fileName.toLowerCase();
       final isAudio = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'webm', 'opus', 'flac'].any((e) => name.endsWith('.$e'));
 
