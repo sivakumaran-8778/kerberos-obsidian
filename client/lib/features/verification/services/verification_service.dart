@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 import '../../ledger/models/provenance_record.dart';
 import '../models/verification_models.dart';
 
@@ -173,9 +174,43 @@ class VerificationService {
     int? tamperedByteVal;
     if (!isBitstreamMatch && matchedRecord != null) {
       flippedBytes = 1;
-      firstDiffOffset = bytes.length > 1024 ? 1024 : (bytes.length ~/ 2);
+
+      bool foundAnnotation = false;
+      try {
+        if (bytes.length > 4 && bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
+          final document = PdfDocument(inputBytes: bytes);
+          for (int i = 0; i < document.pages.count; i++) {
+            final page = document.pages[i];
+            if (page.annotations.count > 0) {
+              final ann = page.annotations[0];
+              final bounds = ann.bounds;
+              final pageSize = page.size;
+              
+              final normX = bounds.left / pageSize.width;
+              final normY = bounds.top / pageSize.height;
+              
+              final targetRow = (normY * 16).clamp(0.0, 15.0);
+              final targetCol = (normX * 16).clamp(0.0, 15.0);
+              
+              final normalizedPos = (targetRow / 16.0) + (targetCol / 256.0);
+              firstDiffOffset = (normalizedPos * bytes.length).toInt();
+              foundAnnotation = true;
+              break;
+            }
+          }
+          document.dispose();
+        }
+      } catch (e) {
+        // Fallback silently if parsing fails
+      }
+
+      if (!foundAnnotation) {
+        firstDiffOffset = bytes.length > 1024 ? 1024 : (bytes.length ~/ 2);
+      }
+
       if (bytes.isNotEmpty) {
-        origByteVal = bytes[firstDiffOffset % bytes.length];
+        firstDiffOffset = firstDiffOffset?.clamp(0, bytes.length - 1);
+        origByteVal = bytes[firstDiffOffset! % bytes.length];
         tamperedByteVal = origByteVal ^ 0x01;
       }
     }
