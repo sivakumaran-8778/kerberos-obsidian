@@ -2229,8 +2229,9 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   Widget _buildProvenanceStudio(AsyncValue<dynamic> provenanceState) {
     return GlassContainer(
       glow: true,
-      glowColor: CyberTheme.cyan,
-      borderColor: CyberTheme.border,
+      glowColor: CyberTheme.cyan.withValues(alpha: 0.15),
+      borderColor: const Color(0x3300F0FF),
+      padding: const EdgeInsets.all(28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2241,49 +2242,142 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       color: CyberTheme.cyan.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: CyberTheme.borderCyan),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: CyberTheme.cyan.withValues(alpha: 0.35)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CyberTheme.cyan.withValues(alpha: 0.2),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.fingerprint, color: CyberTheme.cyan, size: 20),
+                    child: const Icon(Icons.fingerprint_rounded, color: CyberTheme.cyan, size: 24),
                   ),
-                  const SizedBox(width: 12),
-                  const Column(
+                  const SizedBox(width: 14),
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'PROVENANCE STUDIO',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: CyberTheme.textPrimary,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            'PROVENANCE INGESTION & SEALING ENGINE',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0x1A10B981),
+                              borderRadius: BorderRadius.circular(100),
+                              border: Border.all(color: const Color(0x4D10B981)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 5,
+                                  height: 5,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF10B981),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'C2PA 2.1 ACTIVE',
+                                  style: GoogleFonts.jetBrainsMono(
+                                    color: const Color(0xFF34D399),
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 3),
                       Text(
-                        'C2PA HARDWARE MANIFEST & PERCEPTUAL VECTOR',
-                        style: TextStyle(fontSize: 10, color: CyberTheme.textMuted, letterSpacing: 0.5),
+                        'Hardware Manifest Synthesis • 256-D Perceptual Tensor • Immutable Ledger Stamp',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: CyberTheme.textMuted,
+                          letterSpacing: 0.2,
+                        ),
                       ),
                     ],
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: CyberTheme.cyan.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: CyberTheme.borderCyan),
-                ),
-                child: const Text('ED25519 READY', style: TextStyle(color: CyberTheme.cyan, fontSize: 9, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                    decoration: BoxDecoration(
+                      color: CyberTheme.cyan.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(100),
+                      border: Border.all(color: CyberTheme.cyan.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.key_rounded, color: CyberTheme.cyan, size: 12),
+                        const SizedBox(width: 5),
+                        Text(
+                          'ED25519 READY',
+                          style: GoogleFonts.jetBrainsMono(
+                            color: CyberTheme.cyan,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0x18A855F7),
+                      borderRadius: BorderRadius.circular(100),
+                      border: Border.all(color: const Color(0x4DA855F7)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.shield_outlined, color: Color(0xFFC084FC), size: 12),
+                        const SizedBox(width: 5),
+                        Text(
+                          'ISOLATE SANDBOX',
+                          style: GoogleFonts.jetBrainsMono(
+                            color: const Color(0xFFC084FC),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 24),
 
-          // Dotted Cyber Ingestion Portal
+          // Ingestion Portal
           DropTarget(
             onDragEntered: (_) => setState(() => _isDragging = true),
             onDragExited: (_) => setState(() => _isDragging = false),
@@ -2294,216 +2388,437 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               }
             },
             child: GestureDetector(
-              onTap: _pickAndIngestFile,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-                decoration: BoxDecoration(
-                  color: _isDragging
-                      ? CyberTheme.accentColor.withValues(alpha: 0.18)
-                      : CyberTheme.surfaceElevated.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: _isDragging ? CyberTheme.accentColor : CyberTheme.borderShard,
-                    width: _isDragging ? 2 : 1.2,
-                  ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 58,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: CyberTheme.shardGradient,
-                        boxShadow: [
-                          BoxShadow(
-                            color: CyberTheme.accentColor.withValues(alpha: 0.35),
-                            blurRadius: 18,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.cloud_upload_outlined, color: Colors.white, size: 28),
+              onTap: provenanceState.isLoading ? null : _pickAndIngestFile,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 28),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: _isDragging
+                          ? [
+                              CyberTheme.accentColor.withValues(alpha: 0.22),
+                              CyberTheme.cyan.withValues(alpha: 0.15),
+                            ]
+                          : [
+                              const Color(0x1A1E1B4B),
+                              const Color(0x0D0F172A),
+                            ],
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _isDragging ? 'RELEASE TO SEAL ASSET' : 'DRAG & DROP ASSET HERE OR BROWSE',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: _isDragging ? const Color(0xFFC084FC) : CyberTheme.textPrimary,
-                      ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _isDragging
+                          ? const Color(0xFFC084FC)
+                          : const Color(0x33A855F7),
+                      width: _isDragging ? 2.0 : 1.2,
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Supports Images, PDFs, Docs, all PPTs, Videos, and Audio (All-Format C2PA Sealing)',
-                      style: TextStyle(fontSize: 11, color: CyberTheme.textMuted),
-                    ),
-                    const SizedBox(height: 16),
-                    CyberButton(
-                      variant: CyberButtonVariant.whitePill,
-                      height: 34,
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      icon: Icons.folder_open,
-                      onTap: _pickAndIngestFile,
-                      child: const Text('Browse Device'),
-                    ),
-                    if (provenanceState.isLoading) ...[
-                      const SizedBox(height: 18),
-                      const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: CyberTheme.accentColor),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _isDragging
+                            ? CyberTheme.accentColor.withValues(alpha: 0.25)
+                            : const Color(0x22000000),
+                        blurRadius: _isDragging ? 28 : 16,
+                        spreadRadius: _isDragging ? 4 : 0,
                       ),
                     ],
-                  ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Animated Concentric Aperture
+                      AnimatedBuilder(
+                        animation: _pulseController,
+                        builder: (context, child) {
+                          final pulse = _pulseController.value;
+                          return Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Outer Halo
+                              Container(
+                                width: 78 + (pulse * 8),
+                                height: 78 + (pulse * 8),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: (_isDragging
+                                          ? const Color(0xFFC084FC)
+                                          : CyberTheme.accentColor)
+                                      .withValues(alpha: 0.08 + (pulse * 0.08)),
+                                ),
+                              ),
+                              // Middle Ring
+                              Container(
+                                width: 66,
+                                height: 66,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: (_isDragging
+                                            ? const Color(0xFFC084FC)
+                                            : const Color(0xFF818CF8))
+                                        .withValues(alpha: 0.3 + (pulse * 0.2)),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                              // Core Glowing Bulb
+                              Container(
+                                width: 54,
+                                height: 54,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF9333EA),
+                                      Color(0xFF6366F1),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF9333EA).withValues(alpha: 0.45),
+                                      blurRadius: 18,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _isDragging ? Icons.file_download_rounded : Icons.cloud_upload_rounded,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+
+                      Text(
+                        _isDragging ? 'RELEASE FILE TO COMMENCE SEALING' : 'DRAG & DROP ASSET HERE OR BROWSE',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: _isDragging ? const Color(0xFFC084FC) : Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Compute perceptual hash tensor, inject Ed25519 C2PA metadata & anchor to local zero-trust ledger',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11.5,
+                          color: CyberTheme.textMuted,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Format pills
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _buildStudioFormatTag(Icons.image_outlined, 'IMAGES', 'PNG, JPG, WEBP, TIFF', const Color(0xFF38BDF8)),
+                          _buildStudioFormatTag(Icons.description_outlined, 'DOCUMENTS', 'PDF, DOCX, PPTX, TXT', const Color(0xFFA78BFA)),
+                          _buildStudioFormatTag(Icons.videocam_outlined, 'VIDEO & AUDIO', 'MP4, WEBM, WAV, MP3', const Color(0xFF34D399)),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Browse Device Button (Elegantly sized & styled)
+                      SizedBox(
+                        width: 220,
+                        height: 40,
+                        child: InkWell(
+                          onTap: provenanceState.isLoading ? null : _pickAndIngestFile,
+                          borderRadius: BorderRadius.circular(100),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Color(0xFFFFFFFF),
+                                  Color(0xFFE2E8F0),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(100),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.folder_open_rounded, color: Color(0xFF0F172A), size: 16),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Browse Device',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: const Color(0xFF0F172A),
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
 
-          // Sealing Results & Cryptographic Inspector
+          // Sealing Results / Architectural Deck / Loading State
           provenanceState.when(
             data: (metadata) {
               if (metadata == null) {
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: CyberTheme.surfaceElevated.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: CyberTheme.border),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'STANDBY: INGEST AN ASSET TO CALCULATE PERCEPTUAL VECTOR & SEAL WITH C2PA',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: CyberTheme.textMuted, fontSize: 11, fontFamily: 'monospace'),
-                    ),
-                  ),
-                );
+                return _buildStandbyPipelineArchitecture();
               }
+              return _buildSealedAssetInspector(metadata);
+            },
+            error: (err, stack) => _buildStudioErrorCard(err),
+            loading: () => _buildStudioLoadingCard(),
+          ),
+        ],
+      ),
+    );
+  }
 
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: CyberTheme.surfaceElevated.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: CyberTheme.borderEmerald, width: 1.2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: CyberTheme.emerald.withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.verified, color: CyberTheme.emerald, size: 16),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'C2PA HARDWARE SEAL VERIFIED',
-                          style: TextStyle(
-                            color: CyberTheme.emerald,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: CyberTheme.emerald.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text('IMMUTABLE HASH', style: TextStyle(color: CyberTheme.emerald, fontSize: 9, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
+  Widget _buildStandbyPipelineArchitecture() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0x120F172A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x28FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.hub_outlined, color: Color(0xFFC084FC), size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'PROVENANCE PIPELINE ARCHITECTURE',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
                     ),
-                    const SizedBox(height: 16),
-
-                    // Vector Spectrum Equalizer Visualizer
-                    if (metadata.perceptualHash != null && metadata.perceptualHash!.isNotEmpty) ...[
-                      const Text(
-                        'PERCEPTUAL VECTOR SPECTRUM (256-D EMBEDDING):',
-                        style: TextStyle(fontSize: 10, color: CyberTheme.textMuted, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0x18FFFFFF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x28FFFFFF)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF38BDF8),
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(height: 8),
-                      Container(
-                        height: 52,
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: CyberTheme.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: CyberTheme.border),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: CustomPaint(
-                            painter: CyberHeatMapRenderer(metadata.perceptualHash!),
-                          ),
-                        ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'STANDBY MODE',
+                      style: GoogleFonts.jetBrainsMono(
+                        color: const Color(0xFF94A3B8),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
                       ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    _buildDetailRow('FILE PATH', metadata.filePath),
-                    const SizedBox(height: 8),
-                    _buildDetailRow('SHA-256', metadata.sha256Hash, isMonospace: true, copyable: true),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        CyberButton(
-                          variant: CyberButtonVariant.emerald,
-                          height: 38,
-                          icon: Icons.verified_outlined,
-                          onTap: () {
-                            _navigateToPage(2);
-                          },
-                          child: const Text('Audit in Verification Protocol ➔'),
-                        ),
-                      ],
                     ),
                   ],
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 700;
+              final cards = [
+                _buildPipelineCard(
+                  step: '01',
+                  icon: Icons.fingerprint_rounded,
+                  accentColor: const Color(0xFF38BDF8),
+                  title: 'Hardware Manifest',
+                  subtitle: 'Ed25519 signature & C2PA 2.1 assertion embedded into binary container.',
+                  tag: 'CRYPTOGRAPHIC ROOT',
+                ),
+                _buildPipelineCard(
+                  step: '02',
+                  icon: Icons.grid_view_rounded,
+                  accentColor: const Color(0xFFC084FC),
+                  title: 'Perceptual Vector',
+                  subtitle: '256-D cosine invariant embedding resistant to format transcode & compression.',
+                  tag: 'MULTI-MODAL TENSOR',
+                ),
+                _buildPipelineCard(
+                  step: '03',
+                  icon: Icons.account_tree_outlined,
+                  accentColor: const Color(0xFF34D399),
+                  title: 'Immutable Ledger',
+                  subtitle: 'Synchronized state block anchored into zero-trust Hive database with user identity.',
+                  tag: 'AES-GCM-256 HIVE',
+                ),
+              ];
+
+              if (isNarrow) {
+                return Column(
+                  children: [
+                    cards[0],
+                    const SizedBox(height: 10),
+                    cards[1],
+                    const SizedBox(height: 10),
+                    cards[2],
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: cards[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[1]),
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[2]),
+                ],
               );
             },
-            error: (err, stack) => Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: CyberTheme.coral.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: CyberTheme.coral.withValues(alpha: 0.4)),
-              ),
-              child: Text(
-                'Fault: ${err.toString()}',
-                style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace'),
-              ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0x0FFFFFFF),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0x18FFFFFF)),
             ),
-            loading: () => Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: CyberTheme.surfaceElevated,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: CyberTheme.border),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: Color(0xFF94A3B8), size: 14),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Ingest any digital media asset above to activate isolated Dart background worker and seal with immutable provenance.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPipelineCard({
+    required String step,
+    required IconData icon,
+    required Color accentColor,
+    required String title,
+    required String subtitle,
+    required String tag,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0x151E1B4B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accentColor.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+                ),
+                child: Icon(icon, color: accentColor, size: 16),
               ),
-              child: const Center(
-                child: Text('> APPLYING ED25519 DIGITAL SIGNATURE & C2PA SEAL...', style: TextStyle(color: CyberTheme.cyan, fontSize: 11, fontFamily: 'monospace')),
+              Text(
+                step,
+                style: GoogleFonts.jetBrainsMono(
+                  color: accentColor.withValues(alpha: 0.6),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: GoogleFonts.plusJakartaSans(
+              color: const Color(0xFF94A3B8),
+              fontSize: 10.5,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              tag,
+              style: GoogleFonts.jetBrainsMono(
+                color: accentColor,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
               ),
             ),
           ),
@@ -2512,20 +2827,472 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
     );
   }
 
-  Widget _buildDetailRow(String label, String value, {bool isMonospace = false, bool copyable = false}) {
+  Widget _buildStudioFormatTag(IconData icon, String category, String extensions, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0x14FFFFFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x22FFFFFF)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 6),
+          Text(
+            category,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            extensions,
+            style: GoogleFonts.jetBrainsMono(
+              color: const Color(0xFF94A3B8),
+              fontSize: 9.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSealedAssetInspector(dynamic metadata) {
+    final fileName = (metadata.filePath as String).split(RegExp(r'[\\/]')).last;
+    final hasVector = metadata.perceptualHash != null && (metadata.perceptualHash as List).isNotEmpty;
+    final currentUser = ref.read(currentUserProvider);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0x28064E3B),
+            Color(0x140F172A),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x6610B981), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x2410B981),
+            blurRadius: 20,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with Emerald Shield & Status
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0x2410B981),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0x6610B981)),
+                ),
+                child: const Icon(Icons.verified_rounded, color: Color(0xFF34D399), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ASSET CRYPTOGRAPHICALLY SEALED & ANCHORED',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: const Color(0xFF34D399),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Signed with Ed25519 hardware keypair • Manifest stamped with microsecond UTC timestamp',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: const Color(0xFF94A3B8),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x2410B981),
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: const Color(0x6610B981)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF34D399),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'IMMUTABLE PROOF',
+                      style: GoogleFonts.jetBrainsMono(
+                        color: const Color(0xFF34D399),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // File Info & Chips
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0x18FFFFFF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x28FFFFFF)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF38BDF8), size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fileName,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        metadata.filePath,
+                        style: GoogleFonts.jetBrainsMono(
+                          color: const Color(0xFF94A3B8),
+                          fontSize: 10,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (currentUser != null) ...[
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0x186366F1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0x4D6366F1)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.person_outline_rounded, color: Color(0xFFA5B4FC), size: 12),
+                        const SizedBox(width: 4),
+                        Text(
+                          currentUser.email ?? 'Unknown Identity',
+                          style: GoogleFonts.jetBrainsMono(
+                            color: const Color(0xFFA5B4FC),
+                            fontSize: 9.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 256-D Perceptual Vector Spectrum Visualizer
+          if (hasVector) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0x180F172A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0x33A855F7)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.graphic_eq_rounded, color: Color(0xFFC084FC), size: 14),
+                          const SizedBox(width: 6),
+                          Text(
+                            'PERCEPTUAL VECTOR SPECTRUM (256-D COSINE EMBEDDING)',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10.5,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'NORM: INVARIANT',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 9,
+                          color: const Color(0xFFC084FC),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 52,
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF070913),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0x28FFFFFF)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: CustomPaint(
+                        painter: CyberHeatMapRenderer(metadata.perceptualHash!),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+
+          // Hashes & Manifest URIs
+          _buildStudioDetailRow('SHA-256', metadata.sha256Hash, isMonospace: true, copyable: true),
+          const SizedBox(height: 8),
+          _buildStudioDetailRow('C2PA URI', 'urn:kerberos:sealed:${metadata.sha256Hash.substring(0, 12)}', isMonospace: true, copyable: true),
+          const SizedBox(height: 20),
+
+          // Action Toolbar
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Seal Another Asset
+              InkWell(
+                onTap: _pickAndIngestFile,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0x18FFFFFF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x33FFFFFF)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.refresh_rounded, size: 14, color: Colors.white),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Seal Another Asset',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Navigate to Verification
+              InkWell(
+                onTap: () => _navigateToPage(2),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF059669),
+                        Color(0xFF10B981),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.verified_outlined, color: Colors.white, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Audit in Verification Protocol ➔',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudioLoadingCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+      decoration: BoxDecoration(
+        color: const Color(0x1F1E1B4B),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x4400F0FF)),
+        boxShadow: [
+          BoxShadow(
+            color: CyberTheme.cyan.withValues(alpha: 0.15),
+            blurRadius: 20,
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(CyberTheme.cyan),
+              backgroundColor: Color(0x2600F0FF),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'SYNTHESIZING C2PA HARDWARE MANIFEST & ED25519 SIGNATURE',
+            style: GoogleFonts.jetBrainsMono(
+              color: CyberTheme.cyan,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Computing 256-D Perceptual Vector spectrum and anchoring proof block to encrypted Hive ledger...',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              color: CyberTheme.textMuted,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudioErrorCard(Object err) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0x22EF4444),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x66EF4444)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Color(0xFFF87171), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SEALING FAULT DETECTED',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: const Color(0xFFF87171),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  err.toString(),
+                  style: GoogleFonts.jetBrainsMono(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudioDetailRow(String label, String value, {bool isMonospace = false, bool copyable = false}) {
     return Row(
       children: [
         SizedBox(
-          width: 80,
-          child: Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: CyberTheme.textMuted)),
+          width: 84,
+          child: Text(
+            label,
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF94A3B8),
+              letterSpacing: 0.5,
+            ),
+          ),
         ),
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: CyberTheme.surface,
+              color: const Color(0x180F172A),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: CyberTheme.border),
+              border: Border.all(color: const Color(0x28FFFFFF)),
             ),
             child: Row(
               children: [
@@ -2533,23 +3300,38 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   child: Text(
                     value,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: CyberTheme.textPrimary,
-                      fontFamily: isMonospace ? 'monospace' : null,
-                    ),
+                    style: isMonospace
+                        ? GoogleFonts.jetBrainsMono(
+                            fontSize: 11,
+                            color: Colors.white,
+                            letterSpacing: 0.3,
+                          )
+                        : GoogleFonts.plusJakartaSans(
+                            fontSize: 11.5,
+                            color: Colors.white,
+                          ),
                   ),
                 ),
-                if (copyable)
+                if (copyable) ...[
+                  const SizedBox(width: 8),
                   InkWell(
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: value));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Hash copied to clipboard!'), duration: Duration(seconds: 1)),
+                        SnackBar(
+                          content: Text('$label copied to clipboard!'),
+                          duration: const Duration(seconds: 1),
+                          behavior: SnackBarBehavior.floating,
+                        ),
                       );
                     },
-                    child: const Icon(Icons.copy, size: 14, color: CyberTheme.cyan),
+                    borderRadius: BorderRadius.circular(4),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.copy_rounded, size: 14, color: CyberTheme.cyan),
+                    ),
                   ),
+                ],
               ],
             ),
           ),
