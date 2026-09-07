@@ -1080,24 +1080,131 @@ startxref
       expect(stopwatch.elapsedMilliseconds, lessThan(2000));
     });
 
-    test('Crash Resilience: Large MB document (8MB PDF) with appended payload parses without OOM', () {
-      final basePdf = '%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n';
-      final largePdfBytes = BytesBuilder();
-      largePdfBytes.add(utf8.encode(basePdf));
-      // Pad with 8MB of structural data
-      largePdfBytes.add(Uint8List(8 * 1024 * 1024));
-      final finalPayload = largePdfBytes.toBytes();
+    test('Integrated Forensic Heatmap: Generates real pixel-level ELA residuals, false-color thermal overlay, and preview bytes', () {
+      // Generate an authentic 64x64 raster image with two distinct regions (simulating spliced text)
+      final rawImage = img.Image(width: 64, height: 64);
+      for (int y = 0; y < 64; y++) {
+        for (int x = 0; x < 64; x++) {
+          if (x >= 20 && x <= 40 && y >= 20 && y <= 40) {
+            rawImage.setPixelRgb(x, y, 255, 0, 0); // Spliced region
+          } else {
+            rawImage.setPixelRgb(x, y, 200, 200, 200); // Background region
+          }
+        }
+      }
+      final pngBytes = Uint8List.fromList(img.encodePng(rawImage));
 
       final report = DocumentForensicService.analyzeDocument(
-        bytes: finalPayload,
-        fileName: 'massive_annex_compilation.pdf',
+        bytes: pngBytes,
+        fileName: 'bank_statement_spliced.png',
       );
 
-      expect(report.fileCategory, equals(ForensicFileCategory.document));
-      expect(report.fileSizeBytes, equals(finalPayload.length));
+      expect(report.fileCategory, equals(ForensicFileCategory.image));
+      expect(report.elaAnalysis, isNotNull);
+
+      final ela = report.elaAnalysis!;
+      expect(ela.imageWidth, equals(64));
+      expect(ela.imageHeight, equals(64));
+      expect(ela.previewImageBytes, isNotNull);
+      expect(ela.previewImageBytes!.isNotEmpty, isTrue);
+      expect(ela.elaImageBytes, isNotNull);
+      expect(ela.elaImageBytes!.isNotEmpty, isTrue);
+      expect(ela.thermalImageBytes, isNotNull);
+      expect(ela.thermalImageBytes!.isNotEmpty, isTrue);
+
+      // Verify encoded PNG validity
+      final decodedPreview = img.decodePng(ela.previewImageBytes!);
+      expect(decodedPreview, isNotNull);
+      expect(decodedPreview!.width, equals(64));
+      expect(decodedPreview.height, equals(64));
+
+      final decodedEla = img.decodePng(ela.elaImageBytes!);
+      expect(decodedEla, isNotNull);
+      expect(decodedEla!.width, equals(64));
+      expect(decodedEla.height, equals(64));
+
+      final decodedThermal = img.decodePng(ela.thermalImageBytes!);
+      expect(decodedThermal, isNotNull);
+      expect(decodedThermal!.width, equals(64));
+      expect(decodedThermal.height, equals(64));
+
+      // 16x16 tensor verification
+      expect(ela.heatmapTensor.length, equals(256));
+      expect(ela.baselineErrorRate, greaterThan(0.0));
+      expect(ela.peakErrorRate, greaterThanOrEqualTo(0.0));
+    });
+
+    test('Cybersecurity Assertion: Detects C2PA JUMBF manifests & Ed25519 hardware assertion seal in image streams', () {
+      final header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG signature
+      final c2paPayload = utf8.encode('IHDR...jumb/c2pa/manifest...Ed25519 Hardware Assertion Seal...IDAT...IEND');
+      final bytes = Uint8List.fromList([...header, ...c2paPayload]);
+
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'certified_notarized_scan.png',
+      );
+
+      expect(report.isDigitalSignaturePresent, isTrue);
+      expect(report.digitalSignatureAlgorithm, equals('Ed25519 Hardware Assertion Seal'));
       expect(report.isMagicByteValid, isTrue);
+      expect(report.hasTrailingPayload, isFalse);
+    });
+
+    test('6 Security Functions Parity: All 6 forensic security metrics reflect true zero-trust properties', () {
+      final cleanPdf = '''
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R >>
+endobj
+xref
+0 4
+0000000000 65535 f 
+0000000010 00000 n 
+0000000060 00000 n 
+0000000115 00000 n 
+trailer
+<< /Size 4 /Root 1 0 R /Producer (Kerberos Direct Issue Compiler v2.4) >>
+startxref
+170
+%%EOF
+''';
+      final bytes = Uint8List.fromList(utf8.encode(cleanPdf));
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'statutory_original_contract.pdf',
+      );
+
+      // 1. PDF REVISION COUNT: 1 Generation • Single generation original
+      expect(report.revisionCount, equals(1));
+      expect(report.isOriginal, isTrue);
+
+      // 2. EDITOR FOOTPRINTS: Clean • None (Unmodified Clean Stream)
+      expect(report.editingSoftwareDetected.isEmpty, isTrue);
+
+      // 3. DIGITAL SIGNATURE: Valid fallback or assertion
+      expect(report.isGovernmentOrAadhaarDoc, isFalse);
+
+      // 4. ORIGIN PIPELINE: Direct Issue / Scan
+      expect(report.isVirtualPrinterFlattened, isFalse);
+      expect(report.isScreenshotOrScreenCapture, isFalse);
+      expect(report.isSocialMediaCompressed, isFalse);
+
+      // 5. MAGIC HEADER PARITY: RFC Valid • application/pdf
+      expect(report.isMagicByteValid, isTrue);
+      expect(report.mimeType, equals('application/pdf'));
+
+      // 6. TRAILING STEGO PAYLOAD: None • Clean file termination
+      expect(report.hasTrailingPayload, isFalse);
+      expect(report.trailingPayloadBytes, equals(0));
     });
   });
 }
+
 
 

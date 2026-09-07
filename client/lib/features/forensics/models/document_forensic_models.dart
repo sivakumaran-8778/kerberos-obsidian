@@ -125,13 +125,18 @@ class DocumentRevisionEntry {
   });
 }
 
-/// Error Level Analysis (ELA) spatial quantization matrix
+/// Error Level Analysis (ELA) spatial quantization matrix and pixel-level heatmap
 class DocumentElaAnalysis {
   final List<double> heatmapTensor; // 256 normalized floats (16x16 grid)
   final double peakErrorRate; // 0.0 to 1.0
   final double baselineErrorRate; // 0.0 to 1.0 (mean background residual)
   final String anomalyCoordinates;
   final bool hasSplicingAnomaly;
+  final Uint8List? elaImageBytes; // Real encoded PNG of amplified ELA residual difference
+  final Uint8List? thermalImageBytes; // Real false-color thermal heatmap PNG
+  final Uint8List? previewImageBytes; // Base raster image PNG that was analyzed
+  final int imageWidth;
+  final int imageHeight;
 
   const DocumentElaAnalysis({
     required this.heatmapTensor,
@@ -139,6 +144,11 @@ class DocumentElaAnalysis {
     this.baselineErrorRate = 0.124,
     required this.anomalyCoordinates,
     required this.hasSplicingAnomaly,
+    this.elaImageBytes,
+    this.thermalImageBytes,
+    this.previewImageBytes,
+    this.imageWidth = 0,
+    this.imageHeight = 0,
   });
 }
 
@@ -402,4 +412,24 @@ class DocumentForensicReport {
 
   bool get isTranscoded =>
       verdict == DocumentForensicVerdict.socialMediaTranscoded;
+
+  bool get isPdf =>
+      mimeType == 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+
+  bool get isImage =>
+      fileCategory == ForensicFileCategory.image || mimeType.startsWith('image/');
+
+  Map<String, String> get metadata {
+    final map = <String, String>{};
+    if (creationDate != null) map['created'] = creationDate!.toIso8601String();
+    if (modificationDate != null) map['modified'] = modificationDate!.toIso8601String();
+    if (editingSoftwareDetected.isNotEmpty) map['software'] = editingSoftwareDetected.first;
+    for (final h in history) {
+      if (h.softwareOrProducer != null && h.softwareOrProducer!.isNotEmpty) {
+        map['producer'] = h.softwareOrProducer!;
+        break;
+      }
+    }
+    return map;
+  }
 }

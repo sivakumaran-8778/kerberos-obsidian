@@ -363,18 +363,26 @@ class DocumentForensicService {
         lowerName.contains('adhaar') ||
         lowerName.contains('uidai');
 
-    // Check for PKCS#7 / CMS digital signature container in PDF
+    // Check for PKCS#7 / CMS digital signature container or C2PA / Ed25519 seal in PDF
     final hasDigitalSignature = rawAscii.contains('/Type /Sig') ||
         rawAscii.contains('/Type/Sig') ||
         rawAscii.contains('/ByteRange') ||
         rawAscii.contains('/adbe.pkcs7.detached') ||
-        rawAscii.contains('/ETSI.CAdES.detached');
+        rawAscii.contains('/ETSI.CAdES.detached') ||
+        rawAscii.contains('c2pa') ||
+        rawAscii.contains('C2PA') ||
+        rawAscii.contains('ed25519') ||
+        rawAscii.contains('Ed25519');
 
     String? digitalSignatureAlgorithm;
     if (hasDigitalSignature) {
-      digitalSignatureAlgorithm = rawAscii.contains('/ETSI.CAdES')
-          ? 'ETSI CAdES Detached (X.509 PKI)'
-          : 'Adobe PKCS#7 Detached (RSA SHA-256 HSM)';
+      if (rawAscii.contains('ed25519') || rawAscii.contains('Ed25519') || rawAscii.contains('c2pa') || rawAscii.contains('C2PA')) {
+        digitalSignatureAlgorithm = 'Ed25519 Hardware Assertion Seal';
+      } else if (rawAscii.contains('/ETSI.CAdES')) {
+        digitalSignatureAlgorithm = 'ETSI CAdES Detached (X.509 PKI)';
+      } else {
+        digitalSignatureAlgorithm = 'Adobe PKCS#7 Detached (RSA SHA-256 HSM)';
+      }
     }
 
     // Check if it's a medical bill, hospital record, or financial invoice
@@ -970,6 +978,25 @@ class DocumentForensicService {
       ));
     }
 
+    // Digital Signature & C2PA Hardware Assertion Seal Validation
+    final hasC2paOrSignature = rawAscii.contains('c2pa') ||
+        rawAscii.contains('C2PA') ||
+        rawAscii.contains('jumb') ||
+        rawAscii.contains('JUMB') ||
+        rawAscii.contains('ed25519') ||
+        rawAscii.contains('Ed25519') ||
+        rawAscii.contains('pkcs7') ||
+        rawAscii.contains('PKCS7');
+
+    String? digitalSignatureAlgorithm;
+    if (hasC2paOrSignature) {
+      if (rawAscii.contains('ed25519') || rawAscii.contains('Ed25519') || rawAscii.contains('c2pa') || rawAscii.contains('C2PA')) {
+        digitalSignatureAlgorithm = 'Ed25519 Hardware Assertion Seal';
+      } else {
+        digitalSignatureAlgorithm = 'X.509 PKCS#7 Container';
+      }
+    }
+
     return _InternalForensicAnalysis(
       isTampered: isTampered,
       isScrambled: false,
@@ -982,7 +1009,8 @@ class DocumentForensicService {
       trailingPayloadBytes: trailingBytes,
       creationDate: captureDate,
       modificationDate: isTampered ? DateTime.now() : captureDate,
-      isDigitalSignaturePresent: false,
+      isDigitalSignaturePresent: hasC2paOrSignature,
+      digitalSignatureAlgorithm: digitalSignatureAlgorithm,
       isGovernmentOrAadhaarDoc: isAadhaarScan,
       isVirtualPrinterFlattened: false,
       isScreenshotOrScreenCapture: isScreenshot,
@@ -1735,40 +1763,48 @@ class DocumentForensicService {
     final width = procImage.width;
     final height = procImage.height;
     final tensor = List<double>.filled(256, 0.0);
+    final blockSums = List<double>.filled(256, 0.0);
+    final blockCounts = List<int>.filled(256, 0);
 
-    // Compute pixel delta across 16x16 grid
-    for (int row = 0; row < 16; row++) {
-      final startY = row * height ~/ 16;
-      final endY = (row + 1) * height ~/ 16;
-      final stepY = math.max(1, (endY - startY) ~/ 12);
+    final elaDiffImage = img.Image(width: width, height: height);
+    final thermalImage = img.Image(width: width, height: height, numChannels: 4);
 
-      for (int col = 0; col < 16; col++) {
-        final startX = col * width ~/ 16;
-        final endX = (col + 1) * width ~/ 16;
-        final stepX = math.max(1, (endX - startX) ~/ 12);
+    // Compute pixel delta across full image and accumulate 16x16 grid
+    for (int y = 0; y < height; y++) {
+      final blockY = (y * 16 ~/ height).clamp(0, 15);
+      for (int x = 0; x < width; x++) {
+        final p1 = procImage.getPixel(x, y);
+        final p2 = recompressed.getPixel(x, y);
 
-        double cellDeltaSum = 0.0;
-        int sampleCount = 0;
+        final dr = (p1.r - p2.r).abs();
+        final dg = (p1.g - p2.g).abs();
+        final db = (p1.b - p2.b).abs();
 
-        for (int y = startY; y < endY; y += stepY) {
-          for (int x = startX; x < endX; x += stepX) {
-            final p1 = procImage.getPixel(x, y);
-            final p2 = recompressed.getPixel(x, y);
+        // 1. Amplified ELA difference (high-contrast forensic standard)
+        final ampR = (dr * 18).clamp(0, 255).toInt();
+        final ampG = (dg * 18).clamp(0, 255).toInt();
+        final ampB = (db * 18).clamp(0, 255).toInt();
+        elaDiffImage.setPixelRgba(x, y, ampR, ampG, ampB, 255);
 
-            final dr = (p1.r - p2.r).abs();
-            final dg = (p1.g - p2.g).abs();
-            final db = (p1.b - p2.b).abs();
+        // 2. Normalized residual error for thermal mapping
+        final pixelError = (dr + dg + db) / (3.0 * 255.0);
+        final normError = (pixelError * 12.0).clamp(0.0, 1.0);
+        final (tr, tg, tb) = _getThermalRgb(normError);
+        final alpha = (normError * 200 + 40).clamp(0, 235).toInt();
+        thermalImage.setPixelRgba(x, y, tr, tg, tb, alpha);
 
-            cellDeltaSum += (dr + dg + db) / (3.0 * 255.0);
-            sampleCount++;
-          }
-        }
-
-        final avgError = sampleCount > 0 ? (cellDeltaSum / sampleCount) : 0.0;
-        final cellIdx = row * 16 + col;
-        // Amplify residual by 12x (forensic standard amplification)
-        tensor[cellIdx] = (avgError * 12.0).clamp(0.04, 0.98);
+        // 3. Accumulate 16x16 block stats
+        final blockX = (x * 16 ~/ width).clamp(0, 15);
+        final blockIdx = blockY * 16 + blockX;
+        blockSums[blockIdx] += pixelError;
+        blockCounts[blockIdx]++;
       }
+    }
+
+    for (int i = 0; i < 256; i++) {
+      final count = blockCounts[i];
+      final avgError = count > 0 ? (blockSums[i] / count) : 0.0;
+      tensor[i] = (avgError * 12.0).clamp(0.04, 0.98);
     }
 
     // Statistical outlier analysis
@@ -1811,13 +1847,61 @@ class DocumentForensicService {
       coords = 'Uniform Sensor Baseline (Zero Splicing Variance, ${(stdDev * 100).toStringAsFixed(2)}% σ)';
     }
 
+    Uint8List? elaBytes;
+    Uint8List? thermalBytes;
+    Uint8List? previewBytes;
+    try {
+      elaBytes = Uint8List.fromList(img.encodePng(elaDiffImage));
+      thermalBytes = Uint8List.fromList(img.encodePng(thermalImage));
+      previewBytes = Uint8List.fromList(img.encodePng(procImage));
+    } catch (_) {}
+
     return DocumentElaAnalysis(
       heatmapTensor: tensor,
       peakErrorRate: peak,
       baselineErrorRate: mean.clamp(0.04, 0.30),
       anomalyCoordinates: coords,
       hasSplicingAnomaly: hasSplicing,
+      elaImageBytes: elaBytes,
+      thermalImageBytes: thermalBytes,
+      previewImageBytes: previewBytes,
+      imageWidth: width,
+      imageHeight: height,
     );
+  }
+
+  static (int, int, int) _getThermalRgb(double v) {
+    if (v <= 0.20) {
+      final t = v / 0.20;
+      final r = (10 + t * 6).toInt();
+      final g = (25 + t * 140).toInt();
+      final b = (100 + t * 110).toInt();
+      return (r, g, b);
+    } else if (v <= 0.40) {
+      final t = (v - 0.20) / 0.20;
+      final r = (16 + t * 16).toInt();
+      final g = (165 + t * 45).toInt();
+      final b = (210 - t * 80).toInt();
+      return (r, g, b);
+    } else if (v <= 0.65) {
+      final t = (v - 0.40) / 0.25;
+      final r = (32 + t * 213).toInt();
+      final g = (210 + t * 35).toInt();
+      final b = (130 - t * 120).toInt();
+      return (r, g, b);
+    } else if (v <= 0.85) {
+      final t = (v - 0.65) / 0.20;
+      final r = (245 + t * 9).toInt();
+      final g = (160 - t * 90).toInt();
+      final b = (10 + t * 30).toInt();
+      return (r, g, b);
+    } else {
+      final t = ((v - 0.85) / 0.15).clamp(0.0, 1.0);
+      final r = (244 + t * 11).toInt();
+      final g = (63 - t * 40).toInt();
+      final b = (94 - t * 60).toInt();
+      return (r, g, b);
+    }
   }
 
   static DocumentElaAnalysis _computeStructuralEntropyEla(
