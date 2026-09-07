@@ -43,7 +43,14 @@ class MockWebRTCService extends Fake implements WebRTCService {
   void closeConnection() {}
 }
 
-class MockSignalingService extends Fake implements SignalingService {}
+class MockSignalingService extends Fake implements SignalingService {
+  @override
+  Function(String senderId, String senderName, Map<String, dynamic> messagePayload)? onP2PChatFallbackReceived;
+  @override
+  String get userEmail => 'agent@enclave.local';
+  @override
+  String get displayName => 'Test Agent';
+}
 
 class MockLedgerService extends Fake implements LedgerService {
   final List<ProvenanceRecord> savedRecords = [];

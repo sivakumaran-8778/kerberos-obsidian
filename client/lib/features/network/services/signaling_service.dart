@@ -20,6 +20,9 @@ class SignalingService {
   // Callback for Peer Discovery
   Function(List<Map<String, dynamic>> peers)? onPeersUpdated;
 
+  // Fallback direct message relay callback
+  Function(String senderId, String senderName, Map<String, dynamic> messagePayload)? onP2PChatFallbackReceived;
+
   // Cached active peers in the enclave
   List<Map<String, dynamic>> currentPeers = [];
 
@@ -39,6 +42,8 @@ class SignalingService {
         _userEmail = userEmail;
 
   bool get isInRadar => _isInRadar;
+  String get userEmail => _userEmail;
+  String get displayName => _displayName;
 
   /// Updates local presence status when user enters or leaves the radar portal
   void setInRadar(bool inRadar) {
@@ -46,6 +51,17 @@ class SignalingService {
     _isInRadar = inRadar;
     print(">> [Signaling] User in_radar state changed: $_isInRadar");
     _trackCurrentPresence();
+  }
+
+  /// Actively broadcasts presence and refreshes discovered mesh peers
+  Future<void> rescanMesh() async {
+    _isInRadar = true;
+    await _trackCurrentPresence();
+    final peers = getDiscoveredPeers();
+    if (peers.isNotEmpty || currentPeers.isNotEmpty) {
+      currentPeers = peers;
+      onPeersUpdated?.call(currentPeers);
+    }
   }
 
   void updateIdentity(String displayName, String email) {
@@ -246,6 +262,10 @@ class SignalingService {
           case 'accept':
             print(">> [Signaling] Connection request accepted by $senderName ($senderId)");
             onAcceptReceived?.call(senderId);
+            break;
+          case 'p2p_chat_fallback':
+            print(">> [Signaling] P2P chat fallback message received from $senderName ($senderId)");
+            onP2PChatFallbackReceived?.call(senderId, senderName, signalPayload);
             break;
           default:
             print(">> [Signaling] Unrecognized signal type: '$type'");

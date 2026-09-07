@@ -1,5 +1,6 @@
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -14,13 +15,54 @@ part 'network_providers.g.dart';
 
 String? _cachedSessionId;
 
-String getPersistentDeviceId() {
-  if (_cachedSessionId != null) return _cachedSessionId!;
+/// Explicitly initializes and caches the persistent machine identity in local storage.
+Future<void> initPersistentDeviceId() async {
   if (kIsWeb) {
-    _cachedSessionId = const Uuid().v4();
-  } else {
-    _cachedSessionId = dotenv.env['DEVICE_UUID'] ?? const Uuid().v4();
+    _cachedSessionId ??= const Uuid().v4();
+    return;
   }
+  try {
+    final box = await Hive.openBox('kerberos_device_identity');
+    final stored = box.get('device_uuid')?.toString();
+    if (stored != null && stored.trim().isNotEmpty) {
+      _cachedSessionId = stored.trim();
+    } else {
+      final newId = const Uuid().v4();
+      await box.put('device_uuid', newId);
+      _cachedSessionId = newId;
+    }
+  } catch (_) {
+    _cachedSessionId ??= const Uuid().v4();
+  }
+}
+
+/// Dynamically generates and persists a unique client device ID per machine/session.
+/// Prevents device UUID collisions between Computer 1 and Computer 2.
+String getPersistentDeviceId() {
+  if (_cachedSessionId != null && _cachedSessionId!.isNotEmpty) {
+    return _cachedSessionId!;
+  }
+  if (kIsWeb) {
+    // Each browser session/tab generates its own unique node ID
+    _cachedSessionId = const Uuid().v4();
+    return _cachedSessionId!;
+  }
+  try {
+    if (Hive.isBoxOpen('kerberos_device_identity')) {
+      final box = Hive.box('kerberos_device_identity');
+      final stored = box.get('device_uuid')?.toString();
+      if (stored != null && stored.trim().isNotEmpty) {
+        _cachedSessionId = stored.trim();
+        return _cachedSessionId!;
+      }
+      final newId = const Uuid().v4();
+      box.put('device_uuid', newId);
+      _cachedSessionId = newId;
+      return _cachedSessionId!;
+    }
+  } catch (_) {}
+
+  _cachedSessionId = const Uuid().v4();
   return _cachedSessionId!;
 }
 
@@ -59,7 +101,7 @@ String getSupabaseAnonKey() {
 @Riverpod(keepAlive: true)
 SignalingService signalingService(SignalingServiceRef ref) {
   final myUuid = getPersistentDeviceId();
-  final profile = ref.watch(userProfileProvider);
+  final profile = ref.read(userProfileProvider);
   
   final service = SignalingService(
     Supabase.instance.client,
@@ -69,6 +111,12 @@ SignalingService signalingService(SignalingServiceRef ref) {
   );
   
   service.connect();
+
+  // Dynamically update identity when user profile changes without tearing down signaling
+  ref.listen<UserProfile>(userProfileProvider, (previous, next) {
+    service.updateIdentity(next.displayName, next.email);
+  });
+
   ref.onDispose(() => service.dispose());
   return service;
 }

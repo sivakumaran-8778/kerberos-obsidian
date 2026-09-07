@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/asset_metadata.dart';
 import '../services/asset_processor.dart';
 import '../../ledger/models/provenance_record.dart';
+import '../../auth/providers/auth_providers.dart';
 import '../../../main.dart'; // Importer for ledgerProvider
 import 'package:cross_file/cross_file.dart';
 
@@ -25,6 +26,7 @@ class ProvenanceTaskNotifier extends _$ProvenanceTaskNotifier {
       
       // 2. Fetch the globally initialized LedgerService
       final secureLedger = ref.read(ledgerProvider);
+      final currentEmail = ref.read(currentUserProvider)?.email;
       
       // 3. Construct the immutable Providence Record
       final record = ProvenanceRecord(
@@ -34,6 +36,7 @@ class ProvenanceTaskNotifier extends _$ProvenanceTaskNotifier {
         timestamp: DateTime.now(),
         signature: 'ed25519-placeholder-signature', // Provisioned from .env in full prod
         filePath: metadata.filePath,
+        ownerEmail: currentEmail,
       );
       
       // 4. Seal into the AES-256 Air-Gapped Hive DB

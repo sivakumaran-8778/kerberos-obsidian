@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cross_file/cross_file.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../shared/theme/cyber_theme.dart';
 import '../../../shared/widgets/glass_container.dart';
@@ -66,6 +67,13 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        ref.read(ledgerProvider).syncWithUserAccount(user);
+      }
+    });
   }
 
   @override
@@ -892,6 +900,12 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         sessionService.sessionState == P2PSessionState.connected &&
         _activeModal == ActiveDeckModal.radar;
 
+    ref.listen<User?>(currentUserProvider, (previous, next) {
+      if (next != null) {
+        ref.read(ledgerProvider).syncWithUserAccount(next);
+      }
+    });
+
     return Scaffold(
       backgroundColor: CyberTheme.background,
       body: Stack(
@@ -996,7 +1010,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         badge: 'CRYPTOGRAPHIC AUDIT TRAIL',
                         description:
                             'Cryptographic tamper-evident provenance block history, verifying asset signature validity, perceptual hashes, and peer transmission logs.',
-                        child: _buildLedgerAuditTrail(),
+                        child: _buildLedgerAuditTrail(isFullPage: true),
                       ),
 
                       // Page 5: Dedicated User Profile Page
@@ -2547,9 +2561,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   // ==========================================
   // BENTO CARD 3: IMMUTABLE ZERO-TRUST LEDGER
   // ==========================================
-  Widget _buildLedgerAuditTrail() {
+  Widget _buildLedgerAuditTrail({bool isFullPage = false}) {
     final ledger = ref.watch(ledgerProvider);
     final history = ledger.getHistory();
+    final displayCount = isFullPage ? history.length : (history.length > 5 ? 5 : history.length);
 
     return GlassContainer(
       padding: const EdgeInsets.all(24),
@@ -2610,20 +2625,49 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
 
           if (history.isEmpty)
             Container(
-              padding: const EdgeInsets.all(28),
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
               alignment: Alignment.center,
-              child: const Text(
-                'NO ASSETS RECORDED IN AIR-GAPPED LEDGER YET',
-                style: TextStyle(color: CyberTheme.textMuted, fontSize: 11, fontFamily: 'monospace'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: CyberTheme.indigo.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: CyberTheme.border),
+                    ),
+                    child: const Icon(Icons.shield_outlined, color: CyberTheme.indigo, size: 28),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'NO ASSETS RECORDED IN AIR-GAPPED LEDGER YET',
+                    style: TextStyle(
+                      color: CyberTheme.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Cryptographically sealed assets and verified P2P transfers bound to your email account will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: CyberTheme.textMuted, fontSize: 11),
+                  ),
+                ],
               ),
             )
           else
             ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: history.length > 5 ? 5 : history.length,
+              itemCount: displayCount,
               itemBuilder: (context, index) {
                 final record = history[index];
+                final fileName = record.filePath.split(RegExp(r'[\\/]')).last;
+                final owner = record.ownerEmail;
+
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2636,9 +2680,13 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     children: [
                       const Icon(Icons.check_circle, color: CyberTheme.emerald, size: 16),
                       const SizedBox(width: 12),
-                      Text(
-                        record.filePath.split(RegExp(r'[\\/]')).last,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: CyberTheme.textPrimary),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 200),
+                        child: Text(
+                          fileName,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: CyberTheme.textPrimary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -2648,6 +2696,22 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (owner != null && owner.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: CyberTheme.indigo.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: CyberTheme.indigo.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            owner,
+                            style: const TextStyle(fontSize: 9, color: CyberTheme.shardColor, fontFamily: 'monospace'),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(

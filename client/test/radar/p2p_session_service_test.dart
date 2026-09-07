@@ -46,6 +46,12 @@ class MockSignalingService extends Fake implements SignalingService {
   List<Map<String, dynamic>> getDiscoveredPeers() => [];
   @override
   Function(String senderId)? onAcceptReceived;
+  @override
+  Function(String senderId, String senderName, Map<String, dynamic> messagePayload)? onP2PChatFallbackReceived;
+  @override
+  String get userEmail => 'agent@enclave.local';
+  @override
+  String get displayName => 'Test Agent';
 
   @override
   Future<void> sendSignal({

@@ -23,13 +23,15 @@ class ProvenanceRecordAdapter extends TypeAdapter<ProvenanceRecord> {
       timestamp: fields[3] as DateTime,
       signature: fields[4] as String,
       filePath: fields[5] as String,
+      ownerEmail: fields[6] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ProvenanceRecord obj) {
+    final hasOwner = obj.ownerEmail != null;
     writer
-      ..writeByte(6)
+      ..writeByte(hasOwner ? 7 : 6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -42,6 +44,11 @@ class ProvenanceRecordAdapter extends TypeAdapter<ProvenanceRecord> {
       ..write(obj.signature)
       ..writeByte(5)
       ..write(obj.filePath);
+    if (hasOwner) {
+      writer
+        ..writeByte(6)
+        ..write(obj.ownerEmail);
+    }
   }
 
   @override

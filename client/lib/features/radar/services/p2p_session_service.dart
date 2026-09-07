@@ -90,12 +90,22 @@ class P2PSessionService extends ChangeNotifier {
   /// Dispatches a live typing status packet to the remote peer
   Future<void> sendTypingIndicator(bool isTyping) async {
     if (_activePeer != null && !_activePeer!.isSimulated) {
+      final packet = {
+        'type': 'typing',
+        'isTyping': isTyping,
+      };
+      if (_webrtc.isConnected) {
+        try {
+          await _webrtc.sendTextMessage(jsonEncode(packet));
+          return;
+        } catch (_) {}
+      }
       try {
-        final packet = jsonEncode({
-          'type': 'typing',
-          'isTyping': isTyping,
-        });
-        await _webrtc.sendTextMessage(packet);
+        await _signaling.sendSignal(
+          targetId: _activePeer!.uuid,
+          type: 'p2p_chat_fallback',
+          payload: packet,
+        );
       } catch (_) {}
     }
   }
@@ -104,12 +114,22 @@ class P2PSessionService extends ChangeNotifier {
   Future<void> markMessagesAsSeen() async {
     if (!_isChatScreenVisible) return;
     if (_activePeer != null && !_activePeer!.isSimulated) {
+      final packet = {
+        'type': 'seen',
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+      if (_webrtc.isConnected) {
+        try {
+          await _webrtc.sendTextMessage(jsonEncode(packet));
+          return;
+        } catch (_) {}
+      }
       try {
-        final packet = jsonEncode({
-          'type': 'seen',
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        await _webrtc.sendTextMessage(packet);
+        await _signaling.sendSignal(
+          targetId: _activePeer!.uuid,
+          type: 'p2p_chat_fallback',
+          payload: packet,
+        );
       } catch (_) {}
     }
   }
@@ -125,6 +145,11 @@ class P2PSessionService extends ChangeNotifier {
     };
     _webrtc.onTransferComplete = () {
       _finalizeIncomingFile();
+    };
+    _signaling.onP2PChatFallbackReceived = (senderId, senderName, payload) {
+      if (_activePeer != null && _activePeer!.uuid.toLowerCase() == senderId.toLowerCase()) {
+        _handleIncomingTextMessage(jsonEncode(payload));
+      }
     };
     _webrtc.onDataChannelStateChanged = (state) {
       if (_activePeer != null && !_activePeer!.isSimulated) {
@@ -259,20 +284,37 @@ class P2PSessionService extends ChangeNotifier {
       return;
     }
 
-    try {
-      final packet = jsonEncode({
-        'type': 'chat',
-        'id': messageId,
-        'text': text.trim(),
-        'senderName': 'You',
-        'timestamp': DateTime.now().toIso8601String(),
-        'replyToId': replyToId,
-        'replyToSender': replyToSender,
-        'replyToText': replyToText,
-      });
-      await _webrtc.sendTextMessage(packet);
-    } catch (e) {
-      _appendSystemNotice('Failed to dispatch message: $e');
+    final packet = {
+      'type': 'chat',
+      'id': messageId,
+      'text': text.trim(),
+      'senderName': 'You',
+      'timestamp': DateTime.now().toIso8601String(),
+      'replyToId': replyToId,
+      'replyToSender': replyToSender,
+      'replyToText': replyToText,
+    };
+
+    bool sentOverDataChannel = false;
+    if (_webrtc.isConnected) {
+      try {
+        await _webrtc.sendTextMessage(jsonEncode(packet));
+        sentOverDataChannel = true;
+      } catch (e) {
+        print(">> [P2PSession] DataChannel busy/fault, routing via relay tunnel: $e");
+      }
+    }
+
+    if (!sentOverDataChannel && _activePeer != null && !_activePeer!.isSimulated) {
+      try {
+        await _signaling.sendSignal(
+          targetId: _activePeer!.uuid,
+          type: 'p2p_chat_fallback',
+          payload: packet,
+        );
+      } catch (e) {
+        _appendSystemNotice('Failed to dispatch message: $e');
+      }
     }
   }
 
@@ -341,6 +383,7 @@ class P2PSessionService extends ChangeNotifier {
           : 'urn:c2pa:obsidian:${metadata.sha256Hash.substring(0, 12)}';
       
       // 2. Seal into air-gapped AES-256 Hive ledger
+      final userEmail = _signaling.userEmail;
       final record = ProvenanceRecord(
         id: const Uuid().v4(),
         originalFileHash: metadata.sha256Hash,
@@ -350,6 +393,7 @@ class P2PSessionService extends ChangeNotifier {
             ? 'ed25519-voice-seal-${DateTime.now().millisecondsSinceEpoch}'
             : 'ed25519-p2p-seal-${DateTime.now().millisecondsSinceEpoch}',
         filePath: fileName,
+        ownerEmail: userEmail.isNotEmpty ? userEmail : null,
       );
       await _ledger.addRecord(record);
 
@@ -465,6 +509,7 @@ class P2PSessionService extends ChangeNotifier {
     final manifestUri = 'urn:c2pa:obsidian:voice:${sha256Hash.substring(0, 12)}';
 
     // 1. Anchor in local air-gapped ledger
+    final userEmail = _signaling.userEmail;
     final record = ProvenanceRecord(
       id: const Uuid().v4(),
       originalFileHash: sha256Hash,
@@ -472,6 +517,7 @@ class P2PSessionService extends ChangeNotifier {
       timestamp: DateTime.now(),
       signature: 'ed25519-voice-seal-${DateTime.now().millisecondsSinceEpoch}',
       filePath: fileName,
+      ownerEmail: userEmail.isNotEmpty ? userEmail : null,
     );
     await _ledger.addRecord(record);
 
@@ -622,6 +668,7 @@ class P2PSessionService extends ChangeNotifier {
       );
 
       // Register received sealed asset into air-gapped ledger
+      final userEmail = _signaling.userEmail;
       final record = ProvenanceRecord(
         id: const Uuid().v4(),
         originalFileHash: completedAttachment.sha256Hash,
@@ -629,6 +676,7 @@ class P2PSessionService extends ChangeNotifier {
         timestamp: DateTime.now(),
         signature: 'received-from-${_activePeer?.displayName ?? "peer"}',
         filePath: completedAttachment.fileName,
+        ownerEmail: userEmail.isNotEmpty ? userEmail : null,
       );
       await _ledger.addRecord(record);
 

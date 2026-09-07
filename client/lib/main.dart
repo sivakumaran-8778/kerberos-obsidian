@@ -11,7 +11,7 @@ import 'features/network/providers/network_providers.dart';
 import 'features/workspace/presentation/workspace_screen.dart';
 
 // Global Provider for the securely initialized ledger
-final ledgerProvider = Provider<LedgerService>((ref) {
+final ledgerProvider = ChangeNotifierProvider<LedgerService>((ref) {
   throw UnimplementedError('LedgerService must be initialized before runApp');
 });
 
@@ -30,13 +30,16 @@ void main() async {
   );
 
   // 3. Air-gapped AES-256 Ledger Boot
-  final secureLedger = LedgerService();
+  final secureLedger = LedgerService(supabaseClient: Supabase.instance.client);
   await secureLedger.initialize();
+
+  // 4. Initialize distinct persistent device identity for this machine
+  await initPersistentDeviceId();
 
   runApp(
     ProviderScope(
       overrides: [
-        ledgerProvider.overrideWithValue(secureLedger),
+        ledgerProvider.overrideWith((ref) => secureLedger),
       ],
       child: const KerberosApp(),
     ),
@@ -55,6 +58,8 @@ class KerberosApp extends ConsumerWidget {
     if (currentUser != null) {
       ref.watch(webRtcServiceProvider);
       ref.watch(incomingTransferNotifierProvider);
+      // Synchronize sealed files bound to current user email across devices
+      ref.read(ledgerProvider).syncWithUserAccount(currentUser);
     }
 
     return MaterialApp(

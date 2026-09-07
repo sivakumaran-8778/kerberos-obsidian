@@ -41,13 +41,16 @@ class WebRTCService {
     'iceCandidatePoolSize': 10,
     'iceTransportPolicy': 'all',
     'iceServers': [
-      // 1. Google Public STUN
+      // 1. Google & Cloudflare Public STUN
       {
         'urls': [
           'stun:stun.l.google.com:19302',
           'stun:stun1.l.google.com:19302',
           'stun:stun2.l.google.com:19302',
+          'stun:stun3.l.google.com:19302',
+          'stun:stun4.l.google.com:19302',
           'stun:stun.cloudflare.com:3478',
+          'stun:stun.services.mozilla.com',
         ],
       },
       // 2. Metered OpenRelay Free Public TURN (UDP & TCP)

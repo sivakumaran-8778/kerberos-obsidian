@@ -145,18 +145,21 @@ class _RadarPageState extends ConsumerState<RadarPage> with SingleTickerProvider
                   onToggleSimulated: (val) {
                     ref.read(simulatedPeersEnabledProvider.notifier).state = val;
                   },
-                  onRefresh: () {
+                  onRefresh: () async {
+                    await ref.read(signalingServiceProvider).rescanMesh();
                     ref.invalidate(discoveredPeersNotifierProvider);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'MESH SCAN DISPATCHED // REFRESHING PEER TELEMETRY',
-                          style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.bold),
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'MESH SCAN DISPATCHED // REFRESHING PEER TELEMETRY',
+                            style: GoogleFonts.jetBrainsMono(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          backgroundColor: CyberTheme.cyan,
+                          duration: const Duration(milliseconds: 1400),
                         ),
-                        backgroundColor: CyberTheme.cyan,
-                        duration: const Duration(milliseconds: 1400),
-                      ),
-                    );
+                      );
+                    }
                   },
                   onPeerSelected: (peer) async {
                     await sessionService.connectToPeer(peer);
