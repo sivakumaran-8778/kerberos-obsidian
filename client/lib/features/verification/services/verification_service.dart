@@ -146,8 +146,10 @@ class VerificationService {
       }
     }
 
-    final manifestHash = matchedRecord?.originalFileHash ?? computedHash;
-    final isBitstreamMatch = computedHash.toLowerCase() == manifestHash.toLowerCase();
+    final manifestHash = matchedRecord?.originalFileHash ?? (hasJumbf ? computedHash : 'Unanchored Bitstream');
+    final isBitstreamMatch = matchedRecord != null
+        ? computedHash.toLowerCase() == matchedRecord.originalFileHash.toLowerCase()
+        : hasJumbf;
 
     // Determine Verdict
     VerificationVerdict verdict;

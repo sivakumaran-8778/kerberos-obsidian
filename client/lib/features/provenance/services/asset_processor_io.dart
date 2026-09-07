@@ -9,12 +9,12 @@ import '../../../ffi/c2pa_bindings.dart';
 /// NATIVE IMPLEMENTATION (Windows / macOS / Linux / Mobile)
 /// Fully utilizes hardware threads (Isolates), Native C2PA FFI bindings, and dart:io.
 class AssetProcessorImpl {
-  static Future<AssetMetadata> process(XFile file) async {
+  static Future<AssetMetadata> process(XFile file, {bool signWithC2pa = true}) async {
     final path = file.path;
     if (path.isNotEmpty && File(path).existsSync()) {
       try {
         // Offload heavy cryptographic processing to a background hardware thread
-        return await Isolate.run(() => _processInternal(path));
+        return await Isolate.run(() => _processInternal(path, signWithC2pa: signWithC2pa));
       } catch (e) {
         // Safe zero-trust fallback if background isolate cannot access native symbols
       }
@@ -46,7 +46,7 @@ class AssetProcessorImpl {
     );
   }
 
-  static Future<AssetMetadata> _processInternal(String filePath) async {
+  static Future<AssetMetadata> _processInternal(String filePath, {bool signWithC2pa = true}) async {
     final file = File(filePath);
     if (!file.existsSync()) {
       throw Exception("Zero-Trust Fault: Source file missing or inaccessible at path: $filePath");
@@ -58,12 +58,14 @@ class AssetProcessorImpl {
     final hashDigest = sha256.convert(bytes);
     final hashStr = hashDigest.toString();
 
-    // 2. FFI Rust C2PA Injection
-    try {
-      final engine = C2paEngine();
-      final claimData = '{"author": "Kerberos Agent", "hash": "$hashStr"}';
-      engine.signAsset(filePath, claimData);
-    } catch (_) {}
+    // 2. FFI Rust C2PA Injection (skipped if asset was previously sealed or tampered)
+    if (signWithC2pa) {
+      try {
+        final engine = C2paEngine();
+        final claimData = '{"author": "Kerberos Agent", "hash": "$hashStr"}';
+        engine.signAsset(filePath, claimData);
+      } catch (_) {}
+    }
 
     // 3. Document Parsing & Steganography Vector for all formats
     String? extractedText;

@@ -2866,24 +2866,36 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
     final fileName = (metadata.filePath as String).split(RegExp(r'[\\/]')).last;
     final hasVector = metadata.perceptualHash != null && (metadata.perceptualHash as List).isNotEmpty;
     final currentUser = ref.read(currentUserProvider);
+    final bool isTampered = metadata.isTampered == true;
+    final String? originalSealedHash = metadata.originalSealedHash as String?;
+    final String manifestUri = (metadata.c2paManifestUri as String?) ??
+        'urn:kerberos:sealed:${(originalSealedHash ?? metadata.sha256Hash as String).substring(0, 12)}';
+
+    final Color accentColor = isTampered ? const Color(0xFFF43F5E) : const Color(0xFF10B981);
+    final Color borderShine = isTampered ? const Color(0x66F43F5E) : const Color(0x6610B981);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0x28064E3B),
-            Color(0x140F172A),
-          ],
+          colors: isTampered
+              ? const [
+                  Color(0x33881337),
+                  Color(0x140F172A),
+                ]
+              : const [
+                  Color(0x28064E3B),
+                  Color(0x140F172A),
+                ],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0x6610B981), width: 1.2),
-        boxShadow: const [
+        border: Border.all(color: borderShine, width: 1.2),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x2410B981),
+            color: accentColor.withValues(alpha: 0.18),
             blurRadius: 20,
             spreadRadius: 1,
           ),
@@ -2892,18 +2904,22 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with Emerald Shield & Status
+          // Header with Shield & Status
           Row(
             children: [
               Container(
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0x2410B981),
+                  color: accentColor.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0x6610B981)),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.4)),
                 ),
-                child: const Icon(Icons.verified_rounded, color: Color(0xFF34D399), size: 20),
+                child: Icon(
+                  isTampered ? Icons.warning_amber_rounded : Icons.verified_rounded,
+                  color: isTampered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2911,9 +2927,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ASSET CRYPTOGRAPHICALLY SEALED & ANCHORED',
+                      isTampered
+                          ? 'TAMPERED ASSET DETECTED — C2PA ROOT PRESERVED'
+                          : 'ASSET CRYPTOGRAPHICALLY SEALED & ANCHORED',
                       style: GoogleFonts.plusJakartaSans(
-                        color: const Color(0xFF34D399),
+                        color: isTampered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.6,
@@ -2921,7 +2939,9 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Signed with Ed25519 hardware keypair • Manifest stamped with microsecond UTC timestamp',
+                      isTampered
+                          ? 'Bitstream divergence detected against sealed ledger anchor • Original SHA-256 seal & C2PA manifest preserved'
+                          : 'Signed with Ed25519 hardware keypair • Manifest stamped with microsecond UTC timestamp',
                       style: GoogleFonts.plusJakartaSans(
                         color: const Color(0xFF94A3B8),
                         fontSize: 11,
@@ -2933,9 +2953,9 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0x2410B981),
+                  color: accentColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: const Color(0x6610B981)),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -2943,16 +2963,16 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF34D399),
+                      decoration: BoxDecoration(
+                        color: isTampered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'IMMUTABLE PROOF',
+                      isTampered ? 'INTEGRITY SHATTERED' : 'IMMUTABLE PROOF',
                       style: GoogleFonts.jetBrainsMono(
-                        color: const Color(0xFF34D399),
+                        color: isTampered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
                         fontSize: 9.5,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
@@ -2965,6 +2985,35 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
           ),
           const SizedBox(height: 20),
 
+          // Tampered Security Banner Alert
+          if (isTampered) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0x1EF43F5E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0x44F43F5E)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.security_update_warning_rounded, color: Color(0xFFFB7185), size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'This asset was previously sealed in your ledger. Re-uploading a modified or tampered version will not overwrite the original seal. The original SHA-256 value and C2PA manifest remain strictly immutable so tamper verification succeeds.',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: const Color(0xFFFECDD3),
+                        fontSize: 11,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
           // File Info & Chips
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -2975,7 +3024,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
             ),
             child: Row(
               children: [
-                const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF38BDF8), size: 20),
+                Icon(
+                  isTampered ? Icons.warning_amber_rounded : Icons.insert_drive_file_rounded,
+                  color: isTampered ? const Color(0xFFFB7185) : const Color(0xFF38BDF8),
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -2991,7 +3044,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        metadata.filePath,
+                        metadata.filePath as String,
                         style: GoogleFonts.jetBrainsMono(
                           color: const Color(0xFF94A3B8),
                           fontSize: 10,
@@ -3062,10 +3115,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         ],
                       ),
                       Text(
-                        'NORM: INVARIANT',
+                        isTampered ? 'DELTA: DRIFT DETECTED' : 'NORM: INVARIANT',
                         style: GoogleFonts.jetBrainsMono(
                           fontSize: 9,
-                          color: const Color(0xFFC084FC),
+                          color: isTampered ? const Color(0xFFFB7185) : const Color(0xFFC084FC),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -3095,9 +3148,17 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
           ],
 
           // Hashes & Manifest URIs
-          _buildStudioDetailRow('SHA-256', metadata.sha256Hash, isMonospace: true, copyable: true),
-          const SizedBox(height: 8),
-          _buildStudioDetailRow('C2PA URI', 'urn:kerberos:sealed:${metadata.sha256Hash.substring(0, 12)}', isMonospace: true, copyable: true),
+          if (isTampered) ...[
+            _buildStudioDetailRow('ORIGINAL SEALED SHA', originalSealedHash ?? 'N/A', isMonospace: true, copyable: true),
+            const SizedBox(height: 8),
+            _buildStudioDetailRow('LIVE TAMPERED DIGEST', metadata.sha256Hash as String, isMonospace: true, copyable: true),
+            const SizedBox(height: 8),
+            _buildStudioDetailRow('ORIGINAL C2PA URI', manifestUri, isMonospace: true, copyable: true),
+          ] else ...[
+            _buildStudioDetailRow('SHA-256', metadata.sha256Hash as String, isMonospace: true, copyable: true),
+            const SizedBox(height: 8),
+            _buildStudioDetailRow('C2PA URI', manifestUri, isMonospace: true, copyable: true),
+          ],
           const SizedBox(height: 20),
 
           // Action Toolbar
@@ -3140,16 +3201,21 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF059669),
-                        Color(0xFF10B981),
-                      ],
+                    gradient: LinearGradient(
+                      colors: isTampered
+                          ? const [
+                              Color(0xFFE11D48),
+                              Color(0xFFF43F5E),
+                            ]
+                          : const [
+                              Color(0xFF059669),
+                              Color(0xFF10B981),
+                            ],
                     ),
                     borderRadius: BorderRadius.circular(10),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                        color: accentColor.withValues(alpha: 0.35),
                         blurRadius: 12,
                         offset: const Offset(0, 2),
                       ),
@@ -3158,7 +3224,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.verified_outlined, color: Colors.white, size: 16),
+                      Icon(
+                        isTampered ? Icons.gpp_maybe_rounded : Icons.verified_outlined,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'Audit in Verification Protocol ➔',

@@ -261,5 +261,24 @@ void main() {
       expect(report.matchedRecord?.id, equals('rec-uuid-001'));
       expect(report.matchReason, contains('Embedded C2PA envelope detected'));
     });
+
+    test('Tampered file verification against preserved ledger record identifies bitstreamShattered with correct expected and live hashes', () {
+      final tamperedBytes = Uint8List.fromList(utf8.encode('CONFIDENTIAL_OBSIDIAN_PAYLOAD_V2_DATA_TAMPERED'));
+      final tamperedHash = sha256.convert(tamperedBytes).toString();
+
+      // Ledger retains original sealed record
+      final report = VerificationService.analyzeAsset(
+        bytes: tamperedBytes,
+        fileName: 'quarterly_financials_2026.pdf',
+        ledgerHistory: [sealedRecord], // sealedRecord has originalHash
+      );
+
+      expect(report.verdict, equals(VerificationVerdict.bitstreamShattered));
+      expect(report.bitstream.isMatch, isFalse);
+      expect(report.bitstream.manifestHash, equals(originalHash));
+      expect(report.bitstream.computedHash, equals(tamperedHash));
+      expect(report.bitstream.computedHash, isNot(equals(report.bitstream.manifestHash)));
+      expect(report.matchedRecord?.originalFileHash, equals(originalHash));
+    });
   });
 }

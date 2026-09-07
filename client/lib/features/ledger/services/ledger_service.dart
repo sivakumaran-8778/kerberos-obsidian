@@ -84,9 +84,15 @@ class LedgerService extends ChangeNotifier {
     }
   }
 
+  String _cleanFileName(String path) {
+    return path.split(RegExp(r'[\\/]')).last.trim();
+  }
+
   /// Appends or updates a cryptographically sealed record in the ledger and triggers cloud sync.
   /// Enforces deduplication by originalFileHash (SHA-256) so sealing the same file multiple times
   /// updates the existing entry in-place rather than generating duplicate entries.
+  /// Zero-Trust Guard: If an existing sealed record with the same file name exists but with a different
+  /// hash, the original record's hash and C2PA manifest are immutable and preserved.
   Future<void> addRecord(ProvenanceRecord record) async {
     if (!_box.isOpen) {
       throw Exception("Zero-Trust Fault: Unauthorized attempted write to closed ledger.");
@@ -98,6 +104,15 @@ class LedgerService extends ChangeNotifier {
         : record.ownerEmail?.trim().toLowerCase();
 
     final targetHash = record.originalFileHash.trim().toLowerCase();
+    final targetBase = _cleanFileName(record.filePath).toLowerCase();
+
+    // Zero-Trust Guard: Check if a record with the same filename was already sealed by this user.
+    // If the file was tampered with (divergent hash), PRESERVE the original sealed record and do not overwrite it!
+    final existingByName = getRecordByFileName(targetBase, filterEmail: effectiveEmail);
+    if (existingByName != null && existingByName.originalFileHash.trim().toLowerCase() != targetHash) {
+      print(">> [LedgerService] Zero-Trust Guard: Tamper attempt detected on '${record.filePath}'. Original SHA-256 seal (${existingByName.originalFileHash}) is immutable and preserved.");
+      return;
+    }
 
     // Check for existing records matching this hash and owner email
     final matchingKeys = _box.keys.where((k) {
@@ -143,6 +158,27 @@ class LedgerService extends ChangeNotifier {
       throw Exception("Zero-Trust Fault: Unauthorized attempted read from closed ledger.");
     }
     return _box.get(id);
+  }
+
+  /// Retrieves a provenance record by its base file name.
+  /// Ignores directory prefixes and case. Optionally scopes to a specific owner email.
+  ProvenanceRecord? getRecordByFileName(String fileName, {String? filterEmail}) {
+    if (!_box.isOpen) return null;
+    final targetBase = _cleanFileName(fileName).toLowerCase();
+    final targetEmail = (filterEmail ?? _supabase?.auth.currentUser?.email)?.trim().toLowerCase();
+
+    for (final r in _box.values) {
+      if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') continue;
+      final recordBase = _cleanFileName(r.filePath).toLowerCase();
+      if (recordBase == targetBase) {
+        if (targetEmail != null && targetEmail.isNotEmpty) {
+          final owner = r.ownerEmail?.trim().toLowerCase();
+          if (owner != null && owner != targetEmail) continue;
+        }
+        return r;
+      }
+    }
+    return null;
   }
 
   /// Retrieves a provenance record by its SHA-256 file hash.

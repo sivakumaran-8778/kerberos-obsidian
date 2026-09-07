@@ -5,7 +5,7 @@ import 'asset_processor_stub.dart'
     if (dart.library.html) 'asset_processor_web.dart';
 
 class AssetProcessor {
-  static Future<AssetMetadata> processFile(XFile file) async {
-    return AssetProcessorImpl.process(file);
+  static Future<AssetMetadata> processFile(XFile file, {bool signWithC2pa = true}) async {
+    return AssetProcessorImpl.process(file, signWithC2pa: signWithC2pa);
   }
 }

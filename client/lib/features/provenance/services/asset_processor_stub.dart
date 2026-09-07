@@ -3,7 +3,7 @@ import '../models/asset_metadata.dart';
 
 /// Stub implementation to satisfy the compiler
 class AssetProcessorImpl {
-  static Future<AssetMetadata> process(XFile file) {
+  static Future<AssetMetadata> process(XFile file, {bool signWithC2pa = true}) {
     throw UnsupportedError('Asset processing is not supported on this platform.');
   }
 }

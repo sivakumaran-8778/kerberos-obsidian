@@ -5,7 +5,7 @@ import '../models/asset_metadata.dart';
 /// WEB IMPLEMENTATION (Vercel / Browser)
 /// Bypasses dart:io, dart:isolate, and dart:ffi to ensure cross-platform web compilation.
 class AssetProcessorImpl {
-  static Future<AssetMetadata> process(XFile file) async {
+  static Future<AssetMetadata> process(XFile file, {bool signWithC2pa = true}) async {
     // In the browser, we must read bytes asynchronously into memory. No physical file paths exist.
     final bytes = await file.readAsBytes();
     

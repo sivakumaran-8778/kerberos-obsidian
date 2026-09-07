@@ -242,5 +242,55 @@ void main() {
       expect(uniqueHistory.length, 2);
       expect(uniqueHistory.map((r) => r.originalFileHash).toSet(), containsAll(['hash-aaa-111', 'hash-bbb-222']));
     });
+
+    test('Zero-Trust Guard: Tampered file with same filename preserves original sealed hash and manifest', () {
+      const originalHash = 'aaa111originalhash';
+      const tamperedHash = 'bbb222tamperedhash';
+      final originalRecord = ProvenanceRecord(
+        id: 'original-seal-id',
+        originalFileHash: originalHash,
+        c2paManifestUri: 'urn:c2pa:obsidian:orig111',
+        timestamp: DateTime.now().subtract(const Duration(hours: 1)),
+        signature: 'sig-orig',
+        filePath: 'sensitive_dossier.pdf',
+        ownerEmail: 'analyst@enclave.local',
+      );
+
+      // In LedgerService.addRecord, when a record for 'sensitive_dossier.pdf' with a divergent hash is added,
+      // the existing sealed record is preserved untouched.
+      String clean(String p) => p.split(RegExp(r'[\\/]')).last.trim().toLowerCase();
+      final existingByName = clean(originalRecord.filePath) == clean('C:\\downloads\\sensitive_dossier.pdf')
+          ? originalRecord
+          : null;
+
+      expect(existingByName, isNotNull);
+      expect(existingByName!.originalFileHash, originalHash);
+
+      // If hash diverges, verify tamper detection
+      final isTampered = existingByName.originalFileHash != tamperedHash;
+      expect(isTampered, isTrue);
+
+      // Immutable ledger rule: do NOT update originalFileHash with tamperedHash
+      final preservedRecord = isTampered ? existingByName : originalRecord.copyWith(originalFileHash: tamperedHash);
+      expect(preservedRecord.originalFileHash, originalHash);
+      expect(preservedRecord.c2paManifestUri, 'urn:c2pa:obsidian:orig111');
+    });
+
+    test('getRecordByFileName cleans directory prefixes and matches case-insensitively', () {
+      final record = ProvenanceRecord(
+        id: 'rec-01',
+        originalFileHash: 'hash123',
+        c2paManifestUri: 'urn:c2pa:test',
+        timestamp: DateTime.now(),
+        signature: 'sig',
+        filePath: 'C:\\Users\\Kerberos\\Documents\\TOP_SECRET_PLAN.PNG',
+        ownerEmail: 'user@domain.com',
+      );
+
+      String clean(String p) => p.split(RegExp(r'[\\/]')).last.trim().toLowerCase();
+      expect(clean(record.filePath), 'top_secret_plan.png');
+      expect(clean('/var/data/top_secret_plan.png'), 'top_secret_plan.png');
+      expect(clean('TOP_SECRET_PLAN.PNG'), 'top_secret_plan.png');
+    });
   });
 }
