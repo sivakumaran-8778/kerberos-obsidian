@@ -138,6 +138,15 @@ class DocumentElaAnalysis {
   final int imageWidth;
   final int imageHeight;
 
+  // Granular Forensic Spatial Layer Indicators
+  final int changedContentCount;
+  final int overlappedContentCount;
+  final int hiddenContentCount;
+  final List<int> changedCellIndices;
+  final List<int> overlappedCellIndices;
+  final List<int> hiddenCellIndices;
+  final List<String> hotspotDescriptions;
+
   const DocumentElaAnalysis({
     required this.heatmapTensor,
     required this.peakErrorRate,
@@ -149,6 +158,13 @@ class DocumentElaAnalysis {
     this.previewImageBytes,
     this.imageWidth = 0,
     this.imageHeight = 0,
+    this.changedContentCount = 0,
+    this.overlappedContentCount = 0,
+    this.hiddenContentCount = 0,
+    this.changedCellIndices = const [],
+    this.overlappedCellIndices = const [],
+    this.hiddenCellIndices = const [],
+    this.hotspotDescriptions = const [],
   });
 }
 

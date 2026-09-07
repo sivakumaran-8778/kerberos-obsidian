@@ -1203,6 +1203,176 @@ startxref
       expect(report.hasTrailingPayload, isFalse);
       expect(report.trailingPayloadBytes, equals(0));
     });
+
+    // ----------------------------------------------------
+    // Spatial ELA Heatmap: Changes, Overlapped & Hidden Content
+    // ----------------------------------------------------
+    group('Spatial Residual Matrix - Changes, Overlaps, & Hidden Content Accuracy', () {
+      test('Accurately detects altered/spliced content and maps to high-residual changed cells (~95% peak)', () {
+        final pdfWithAlteredRevision = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 50 >>
+stream
+BT /F1 12 Tf 72 700 Td (Original Contract Amount: \$1,000) Tj ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000200 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+300
+%%EOF
+5 0 obj
+<< /Length 55 >>
+stream
+BT /F1 12 Tf 380 600 Tm (Altered Amount: \$95,000) Tj ET
+endstream
+endobj
+xref
+0 1
+0000000000 65535 f 
+5 1
+0000000350 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R /Prev 300 >>
+startxref
+450
+%%EOF
+''';
+        final bytes = Uint8List.fromList(utf8.encode(pdfWithAlteredRevision));
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: bytes,
+          fileName: 'contract_tampered_amount.pdf',
+        );
+
+        expect(report.elaAnalysis, isNotNull);
+        final ela = report.elaAnalysis!;
+        expect(ela.hasSplicingAnomaly, isTrue);
+        expect(ela.changedContentCount, greaterThan(0));
+        expect(ela.changedCellIndices.isNotEmpty, isTrue);
+        expect(ela.peakErrorRate, greaterThanOrEqualTo(0.90));
+        expect(ela.anomalyCoordinates, contains('Quadrant'));
+        expect(ela.hotspotDescriptions.any((d) => d.contains('Altered') || d.contains('Revision')), isTrue);
+      });
+
+      test('Accurately detects overlapped content (whiteout masks, annotations, layered streams)', () {
+        final pdfWithWhiteoutAndLayering = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents [4 0 R 5 0 R] /Annots [6 0 R] >>
+endobj
+4 0 obj
+<< /Length 70 >>
+stream
+BT /F1 12 Tf 100 500 Td (Confidential Baseline Text) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Length 80 >>
+stream
+1 1 1 rg 95 495 200 25 re f
+BT /F1 12 Tf 100 500 Td (Forged Replaced Text) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [100 400 300 450] >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000220 00000 n 
+0000000340 00000 n 
+0000000470 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+550
+%%EOF
+''';
+        final bytes = Uint8List.fromList(utf8.encode(pdfWithWhiteoutAndLayering));
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: bytes,
+          fileName: 'covered_stamp_whiteout.pdf',
+        );
+
+        expect(report.elaAnalysis, isNotNull);
+        final ela = report.elaAnalysis!;
+        expect(ela.overlappedContentCount, greaterThan(0));
+        expect(ela.overlappedCellIndices.isNotEmpty, isTrue);
+        expect(ela.hotspotDescriptions.any((d) => d.contains('Whiteout') || d.contains('Overlapped') || d.contains('Annotation')), isTrue);
+      });
+
+      test('Accurately detects hidden content (invisible rendering mode 3 Tr and trailing stego payload)', () {
+        final pdfWithHiddenTextAndStego = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 85 >>
+stream
+BT 3 Tr /F1 12 Tf 200 300 Td (HIDDEN WATERMARK NEVER PRINTED) Tj ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000200 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+340
+%%EOF
+TRAILLING_CONCEALED_STEGO_PAYLOAD_EXFILTRATION_DATA_BLOCK
+''';
+        final bytes = Uint8List.fromList(utf8.encode(pdfWithHiddenTextAndStego));
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: bytes,
+          fileName: 'hidden_trojan_document.pdf',
+        );
+
+        expect(report.elaAnalysis, isNotNull);
+        final ela = report.elaAnalysis!;
+        expect(ela.hiddenContentCount, greaterThan(0));
+        expect(ela.hiddenCellIndices.isNotEmpty, isTrue);
+        expect(report.hasTrailingPayload, isTrue);
+        expect(ela.hotspotDescriptions.any((d) => d.contains('Invisible') || d.contains('Hidden') || d.contains('Stego')), isTrue);
+      });
+    });
   });
 }
 

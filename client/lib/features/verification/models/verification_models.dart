@@ -247,3 +247,82 @@ class CompleteVerificationReport {
     );
   }
 }
+
+/// Live Provenance & Steganography Verification Result containing
+/// the bitstream hash check, 16x16 anomaly matrix, and coordinate deltas.
+class ProvenanceResult {
+  final String fileName;
+  final int fileSizeBytes;
+  final bool isTampered;
+  final BitstreamCheck? bitstreamCheck;
+  final List<double> anomalyMatrix; // 256 cells (16x16 grid), values 0.0 to 1.0
+  final double peakErrorRate; // e.g. 0.950 (95.0%)
+  final double baselineErrorRate; // e.g. 0.151 (15.1%)
+  final double anomalyThreshold; // 0.550 (> 55.0%)
+  final String detectedPeakCoordinates; // e.g. 'Quadrant B [X: 62%..68%, Y: 18%..25%]'
+  final int? activeCellIndex;
+  final List<int> alteredCellIndices;
+  final List<int> overlappedCellIndices;
+  final List<int> hiddenCellIndices;
+  final Uint8List? fileBytes;
+  final DateTime timestamp;
+  final String? statusMessage;
+
+  const ProvenanceResult({
+    required this.fileName,
+    required this.fileSizeBytes,
+    required this.isTampered,
+    this.bitstreamCheck,
+    required this.anomalyMatrix,
+    this.peakErrorRate = 0.151,
+    this.baselineErrorRate = 0.151,
+    this.anomalyThreshold = 0.550,
+    this.detectedPeakCoordinates = 'Quadrant B [X: 62%..68%, Y: 18%..25%]',
+    this.activeCellIndex,
+    this.alteredCellIndices = const [],
+    this.overlappedCellIndices = const [],
+    this.hiddenCellIndices = const [],
+    this.fileBytes,
+    required this.timestamp,
+    this.statusMessage,
+  });
+
+  ProvenanceResult copyWith({
+    String? fileName,
+    int? fileSizeBytes,
+    bool? isTampered,
+    BitstreamCheck? bitstreamCheck,
+    List<double>? anomalyMatrix,
+    double? peakErrorRate,
+    double? baselineErrorRate,
+    double? anomalyThreshold,
+    String? detectedPeakCoordinates,
+    int? activeCellIndex,
+    List<int>? alteredCellIndices,
+    List<int>? overlappedCellIndices,
+    List<int>? hiddenCellIndices,
+    Uint8List? fileBytes,
+    DateTime? timestamp,
+    String? statusMessage,
+  }) {
+    return ProvenanceResult(
+      fileName: fileName ?? this.fileName,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      isTampered: isTampered ?? this.isTampered,
+      bitstreamCheck: bitstreamCheck ?? this.bitstreamCheck,
+      anomalyMatrix: anomalyMatrix ?? this.anomalyMatrix,
+      peakErrorRate: peakErrorRate ?? this.peakErrorRate,
+      baselineErrorRate: baselineErrorRate ?? this.baselineErrorRate,
+      anomalyThreshold: anomalyThreshold ?? this.anomalyThreshold,
+      detectedPeakCoordinates: detectedPeakCoordinates ?? this.detectedPeakCoordinates,
+      activeCellIndex: activeCellIndex ?? this.activeCellIndex,
+      alteredCellIndices: alteredCellIndices ?? this.alteredCellIndices,
+      overlappedCellIndices: overlappedCellIndices ?? this.overlappedCellIndices,
+      hiddenCellIndices: hiddenCellIndices ?? this.hiddenCellIndices,
+      fileBytes: fileBytes ?? this.fileBytes,
+      timestamp: timestamp ?? this.timestamp,
+      statusMessage: statusMessage ?? this.statusMessage,
+    );
+  }
+}
+

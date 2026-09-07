@@ -11,6 +11,8 @@ import '../../../shared/widgets/glass_container.dart';
 import '../../../main.dart'; // for ledgerProvider
 import '../models/verification_models.dart';
 import '../services/verification_service.dart';
+import '../providers/steganography_providers.dart';
+import 'widgets/steganography_spatial_matrix.dart';
 
 enum _StepOutcome {
   passed,
@@ -285,6 +287,9 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
       fileName: name,
       ledgerHistory: history,
     );
+
+    // Update live steganography state binding
+    ref.read(steganographyAnalysisProvider.notifier).updateFromVerificationReport(newReport);
 
     final s1 = _evaluateStep1(newReport);
     final s2 = _evaluateStep2(newReport);
@@ -1574,6 +1579,37 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
             ),
           ),
         ),
+        if (s.anomalyCoordinates != null && s.anomalyCoordinates != 'None (Baseline Visual Tensor Pristine)')
+          _buildLuxuryRow(
+            label: 'Detected Anomaly Coordinates',
+            child: Text(
+              s.anomalyCoordinates!,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: isAltered ? const Color(0xFFFB7185) : Colors.white70,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        if (s.heatmapVector.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Center(
+            child: SteganographySpatialMatrixWidget(
+              matrix: s.heatmapVector,
+              threshold: 0.55,
+              size: 160,
+              activeCellIndex: ref.watch(activeSpatialCellProvider),
+              onCellHovered: (idx) {
+                ref.read(activeSpatialCellProvider.notifier).state = idx;
+              },
+              onCellTapped: (idx) {
+                ref.read(activeSpatialCellProvider.notifier).state = idx;
+              },
+            ),
+          ),
+        ],
       ],
     );
   }

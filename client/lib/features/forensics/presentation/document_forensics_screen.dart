@@ -14,6 +14,7 @@ import '../../../main.dart'; // for ledgerProvider
 import '../../ledger/models/provenance_record.dart';
 import '../models/document_forensic_models.dart';
 import '../services/document_forensic_service.dart';
+import '../../verification/presentation/widgets/steganography_spatial_matrix.dart';
 
 class DocumentForensicsScreen extends ConsumerStatefulWidget {
   const DocumentForensicsScreen({super.key});
@@ -29,7 +30,8 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   DocumentForensicReport? _report;
   late AnimationController _pulseController;
   int? _hoveredElaIndex;
-  int _elaViewMode = 0; // 0: Composite Overlay, 1: Raw ELA Residuals, 2: Original Asset, 3: 16x16 Matrix
+  int _elaViewMode = 0; // 0: 16x16 Matrix, 1: Document Overlay, 2: Layer & Overlap X-Ray, 3: Raw ELA Residuals, 4: Original Asset
+  int _elaLayerFilter = 0; // 0: All, 1: Changes, 2: Overlapped, 3: Hidden
   double _elaOverlayOpacity = 0.65;
 
   @override
@@ -1391,9 +1393,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           ),
           const SizedBox(height: 8),
           Text(
-            hasRealImage
-                ? 'True per-pixel Error Level Analysis (ELA) computed directly from the uploaded file bitstream. Spliced elements, modified amounts, forged signatures, or re-compressed text exhibit distinct high-frequency quantization energy diverging from native sensor baseline.'
-                : 'Re-compression quantization residuals across a 16×16 spatial matrix. Spliced objects, altered numbers, or pasted signatures exhibit distinct compression artifacts diverging from ambient background noise.',
+            'Re-compression quantization residuals across a 16×16 spatial matrix. Spliced objects, altered numbers, or pasted signatures exhibit distinct compression artifacts diverging from ambient background noise.',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               height: 1.45,
@@ -1402,98 +1402,99 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           ),
           const SizedBox(height: 16),
 
-          // Integrated Mode Bar (when real image bytes are available)
-          if (hasRealImage) ...[
-            LayoutBuilder(
-              builder: (context, barConstraints) {
-                final isCompact = barConstraints.maxWidth < 560;
-                final modes = [
-                  (index: 0, label: 'THERMAL OVERLAY', icon: Icons.layers_rounded),
-                  (index: 1, label: 'RAW ELA MAP', icon: Icons.grain_rounded),
-                  (index: 2, label: 'ORIGINAL ASSET', icon: Icons.image_outlined),
-                  (index: 3, label: '16×16 MATRIX', icon: Icons.grid_4x4_rounded),
-                ];
+          // Multi-View Forensic Mode Bar
+          LayoutBuilder(
+            builder: (context, barConstraints) {
+              final isCompact = barConstraints.maxWidth < 680;
+              final modes = [
+                (index: 0, label: '16×16 MATRIX', icon: Icons.grid_4x4_rounded),
+                if (hasRealImage) ...[
+                  (index: 1, label: 'DOCUMENT OVERLAY', icon: Icons.layers_rounded),
+                  (index: 2, label: 'LAYER X-RAY', icon: Icons.view_in_ar_rounded),
+                  (index: 3, label: 'RAW ELA MAP', icon: Icons.grain_rounded),
+                  (index: 4, label: 'ORIGINAL ASSET', icon: Icons.image_outlined),
+                ],
+              ];
 
-                return Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0x18FFFFFF),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0x28FFFFFF)),
-                  ),
-                  child: isCompact
-                      ? Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: modes.map((m) => _buildModeTab(m.index, m.label, m.icon)).toList(),
-                        )
-                      : Row(
-                          children: modes
-                              .map((m) => Expanded(child: _buildModeTab(m.index, m.label, m.icon)))
-                              .toList(),
-                        ),
-                );
-              },
-            ),
-            if (_elaViewMode == 0) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              return Container(
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: const Color(0x0EFFFFFF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0x18FFFFFF)),
+                  color: const Color(0x18FFFFFF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0x28FFFFFF)),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.tune_rounded, size: 16, color: Color(0xFF38BDF8)),
-                    const SizedBox(width: 8),
-                    Text(
-                      'OVERLAY INTENSITY:',
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: CyberTheme.textMuted,
+                child: isCompact
+                    ? Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: modes.map((m) => _buildModeTab(m.index, m.label, m.icon)).toList(),
+                      )
+                    : Row(
+                        children: modes
+                            .map((m) => Expanded(child: _buildModeTab(m.index, m.label, m.icon)))
+                            .toList(),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderThemeData(
-                          trackHeight: 3,
-                          activeTrackColor: const Color(0xFF38BDF8),
-                          inactiveTrackColor: const Color(0x33FFFFFF),
-                          thumbColor: Colors.white,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                        ),
-                        child: Slider(
-                          value: _elaOverlayOpacity,
-                          min: 0.1,
-                          max: 1.0,
-                          onChanged: (v) => setState(() => _elaOverlayOpacity = v),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${(_elaOverlayOpacity * 100).toInt()}%',
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF38BDF8),
-                      ),
-                    ),
-                  ],
-                ),
+              );
+            },
+          ),
+          if (_elaViewMode == 1 && hasRealImage) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0x0EFFFFFF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x18FFFFFF)),
               ),
-            ],
-            const SizedBox(height: 16),
+              child: Row(
+                children: [
+                  const Icon(Icons.tune_rounded, size: 16, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'OVERLAY INTENSITY:',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: CyberTheme.textMuted,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 3,
+                        activeTrackColor: const Color(0xFF38BDF8),
+                        inactiveTrackColor: const Color(0x33FFFFFF),
+                        thumbColor: Colors.white,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                      ),
+                      child: Slider(
+                        value: _elaOverlayOpacity,
+                        min: 0.1,
+                        max: 1.0,
+                        onChanged: (v) => setState(() => _elaOverlayOpacity = v),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(_elaOverlayOpacity * 100).toInt()}%',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF38BDF8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
+          const SizedBox(height: 16),
 
           LayoutBuilder(
             builder: (context, constraints) {
-              final isWide = constraints.maxWidth > 740;
+              final isWide = constraints.maxWidth > 780;
               final canvasWidget = _buildElaVisualCanvas(ela, constraints.maxWidth);
               final inspectorWidget = _buildElaInspector(ela, hoveredVal, hoveredIndex);
 
@@ -1572,14 +1573,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   }
 
   Widget _buildElaVisualCanvas(DocumentElaAnalysis ela, double availableWidth) {
-    final hasRealImage = ela.previewImageBytes != null;
-    if (!hasRealImage || _elaViewMode == 3) {
+    // Mode 0 is the 16x16 Spatial Residual Matrix from user reference image
+    if (_elaViewMode == 0 || ela.previewImageBytes == null) {
       return Center(
-        child: SizedBox(
-          width: 280,
-          height: 280,
-          child: _buildElaGrid(ela),
-        ),
+        child: _buildElaGrid(ela),
       );
     }
 
@@ -1592,8 +1589,8 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     final hoveredCol = hoveredIdx != null ? (hoveredIdx % 16) : null;
 
     Widget imageStack;
-    if (_elaViewMode == 0) {
-      // 0. Composite Thermal Overlay
+    if (_elaViewMode == 1) {
+      // 1. Composite Thermal Document Overlay
       imageStack = Stack(
         fit: StackFit.expand,
         children: [
@@ -1629,34 +1626,73 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             ),
         ],
       );
-    } else if (_elaViewMode == 1) {
-      // 1. Raw ELA Residual Map
+    } else if (_elaViewMode == 2) {
+      // 2. Layer & Overlap X-Ray (Bounding boxes for altered text, whiteouts, and hidden elements)
       imageStack = Stack(
         fit: StackFit.expand,
         children: [
           Image.memory(
-            ela.elaImageBytes ?? ela.previewImageBytes!,
+            ela.previewImageBytes!,
             fit: BoxFit.contain,
           ),
-          if (hoveredRow != null && hoveredCol != null)
+          // Draw bounding overlays for changed cells
+          for (final idx in ela.changedCellIndices)
             FractionallySizedBox(
               alignment: FractionalOffset(
-                (hoveredCol + 0.5) / 16.0,
-                (hoveredRow + 0.5) / 16.0,
+                ((idx % 16) + 0.5) / 16.0,
+                ((idx ~/ 16) + 0.5) / 16.0,
               ),
               widthFactor: 1.0 / 16.0,
               heightFactor: 1.0 / 16.0,
               child: Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFF38BDF8), width: 1.8),
-                  color: const Color(0x3338BDF8),
+                  color: const Color(0x55FF0055),
+                  border: Border.all(color: const Color(0xFFFF0055), width: 1.2),
+                ),
+              ),
+            ),
+          // Draw bounding overlays for overlapped cells
+          for (final idx in ela.overlappedCellIndices)
+            FractionallySizedBox(
+              alignment: FractionalOffset(
+                ((idx % 16) + 0.5) / 16.0,
+                ((idx ~/ 16) + 0.5) / 16.0,
+              ),
+              widthFactor: 1.0 / 16.0,
+              heightFactor: 1.0 / 16.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0x44F59E0B),
+                  border: Border.all(color: const Color(0xFFF59E0B), width: 1.0),
+                ),
+              ),
+            ),
+          // Draw bounding overlays for hidden cells
+          for (final idx in ela.hiddenCellIndices)
+            FractionallySizedBox(
+              alignment: FractionalOffset(
+                ((idx % 16) + 0.5) / 16.0,
+                ((idx ~/ 16) + 0.5) / 16.0,
+              ),
+              widthFactor: 1.0 / 16.0,
+              heightFactor: 1.0 / 16.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0x44C084FC),
+                  border: Border.all(color: const Color(0xFFC084FC), width: 1.0),
                 ),
               ),
             ),
         ],
       );
+    } else if (_elaViewMode == 3) {
+      // 3. Raw ELA Residual Difference Map
+      imageStack = Image.memory(
+        ela.elaImageBytes ?? ela.previewImageBytes!,
+        fit: BoxFit.contain,
+      );
     } else {
-      // 2. Original Asset
+      // 4. Original Asset
       imageStack = Image.memory(
         ela.previewImageBytes!,
         fit: BoxFit.contain,
@@ -1666,7 +1702,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     return LayoutBuilder(
       builder: (context, constraints) {
         final boxW = constraints.maxWidth;
-        final boxH = (boxW / aspect).clamp(180.0, 360.0);
+        final boxH = (boxW / aspect).clamp(220.0, 380.0);
 
         return Center(
           child: Container(
@@ -1715,73 +1751,17 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   }
 
   Widget _buildElaGrid(DocumentElaAnalysis ela) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF070D18),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x3338BDF8)),
-      ),
-      child: GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: 256,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 16,
-          mainAxisSpacing: 2,
-          crossAxisSpacing: 2,
-        ),
-        itemBuilder: (context, idx) {
-          final val = ela.heatmapTensor[idx];
-          final isHovered = _hoveredElaIndex == idx;
-          final cellColor = _getElaColor(val);
-
-          return MouseRegion(
-            onEnter: (_) => setState(() => _hoveredElaIndex = idx),
-            onExit: (_) => setState(() => _hoveredElaIndex = null),
-            child: GestureDetector(
-              onTap: () => setState(() => _hoveredElaIndex = idx),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                decoration: BoxDecoration(
-                  color: cellColor,
-                  borderRadius: BorderRadius.circular(2),
-                  border: isHovered
-                      ? Border.all(color: Colors.white, width: 1.5)
-                      : (val > 0.65
-                          ? Border.all(
-                              color: const Color(0xFFFF0055).withValues(alpha: 0.6),
-                              width: 0.8,
-                            )
-                          : null),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+    return SteganographySpatialMatrixWidget(
+      matrix: ela.heatmapTensor,
+      threshold: 0.55,
+      activeCellIndex: _hoveredElaIndex,
+      alteredCellIndices: ela.changedCellIndices,
+      overlappedCellIndices: ela.overlappedCellIndices,
+      hiddenCellIndices: ela.hiddenCellIndices,
+      layerFilter: _elaLayerFilter,
+      onCellHovered: (idx) => setState(() => _hoveredElaIndex = idx),
+      onCellTapped: (idx) => setState(() => _hoveredElaIndex = idx),
     );
-  }
-
-  Color _getElaColor(double val) {
-    if (val <= 0.25) {
-      return Color.lerp(
-        const Color(0xFF0B192C),
-        const Color(0xFF0284C7),
-        val / 0.25,
-      )!;
-    } else if (val <= 0.55) {
-      return Color.lerp(
-        const Color(0xFF0284C7),
-        const Color(0xFFF59E0B),
-        (val - 0.25) / 0.30,
-      )!;
-    } else {
-      return Color.lerp(
-        const Color(0xFFF59E0B),
-        const Color(0xFFFF0055),
-        ((val - 0.55) / 0.45).clamp(0.0, 1.0),
-      )!;
-    }
   }
 
   Widget _buildElaInspector(
@@ -1794,11 +1774,31 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     final cellXPercent = col != null ? (col * 100 ~/ 16) : null;
     final cellYPercent = row != null ? (row * 100 ~/ 16) : null;
 
+    final isHoveredChanged = hoveredIndex != null && ela.changedCellIndices.contains(hoveredIndex);
+    final isHoveredOverlapped = hoveredIndex != null && ela.overlappedCellIndices.contains(hoveredIndex);
+    final isHoveredHidden = hoveredIndex != null && ela.hiddenCellIndices.contains(hoveredIndex);
+
+    String cellStatus = 'Ambient Sensor Baseline';
+    Color cellStatusColor = const Color(0xFF38BDF8);
+    if (isHoveredChanged && (isHoveredOverlapped || isHoveredHidden)) {
+      cellStatus = 'CRITICAL: Altered & Overlapped/Hidden';
+      cellStatusColor = const Color(0xFFFF0055);
+    } else if (isHoveredChanged) {
+      cellStatus = 'ALTERATION / SPLICING DETECTED';
+      cellStatusColor = const Color(0xFFFF0055);
+    } else if (isHoveredOverlapped) {
+      cellStatus = 'OVERLAPPED CONTENT / LAYER DETECTED';
+      cellStatusColor = const Color(0xFFF59E0B);
+    } else if (isHoveredHidden) {
+      cellStatus = 'HIDDEN / INVISIBLE CONTENT DETECTED';
+      cellStatusColor = const Color(0xFFC084FC);
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0x0EFFFFFF),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0x1EFFFFFF)),
       ),
       child: Column(
@@ -1821,7 +1821,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 style: GoogleFonts.jetBrainsMono(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: CyberTheme.textSecondary,
+                  color: hoveredIndex != null ? cellStatusColor : CyberTheme.textSecondary,
                 ),
               ),
             ],
@@ -1834,17 +1834,15 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 value: hoveredVal != null
                     ? '${(hoveredVal * 100).toStringAsFixed(1)}%'
                     : '${(ela.peakErrorRate * 100).toStringAsFixed(1)}%',
-                isAlert: hoveredVal != null
-                    ? hoveredVal > 0.55
-                    : ela.hasSplicingAnomaly,
+                isAlert: hoveredVal != null ? hoveredVal > 0.55 : ela.hasSplicingAnomaly,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               _buildMiniMetric(
                 label: 'BACKGROUND BASELINE',
                 value: '${(ela.baselineErrorRate * 100).toStringAsFixed(1)}%',
                 isAlert: false,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               _buildMiniMetric(
                 label: 'ANOMALY THRESHOLD',
                 value: '> 55.0%',
@@ -1853,23 +1851,32 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             ],
           ),
           const SizedBox(height: 14),
+
+          // Peak / Focused Coordinates box
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0x12FFFFFF),
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: hoveredIndex != null ? cellStatusColor.withValues(alpha: 0.4) : const Color(0x1AFFFFFF),
+              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.location_searching_rounded, size: 16, color: Color(0xFF38BDF8)),
+                Icon(
+                  Icons.location_searching_rounded,
+                  size: 16,
+                  color: hoveredIndex != null ? cellStatusColor : const Color(0xFF38BDF8),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        hoveredIndex != null ? 'Focused Cell Coordinates:' : 'Detected Peak Coordinates:',
+                        hoveredIndex != null ? 'Focused Cell Coordinates & Type:' : 'Detected Peak Coordinates:',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -1879,7 +1886,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                       const SizedBox(height: 2),
                       Text(
                         hoveredIndex != null
-                            ? 'Matrix Row $row, Col $col [X: $cellXPercent%..${cellXPercent! + 6}%, Y: $cellYPercent%..${cellYPercent! + 6}%]'
+                            ? 'Row $row, Col $col [X: $cellXPercent%..${cellXPercent! + 6}%, Y: $cellYPercent%..${cellYPercent! + 6}%] • $cellStatus'
                             : ela.anomalyCoordinates,
                         style: GoogleFonts.jetBrainsMono(
                           fontSize: 11,
@@ -1893,7 +1900,73 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
+
+          // Layer Inspection Filter Chips
+          Row(
+            children: [
+              _buildLayerFilterChip(0, 'ALL', ela.changedContentCount + ela.overlappedContentCount + ela.hiddenContentCount, const Color(0xFF38BDF8)),
+              const SizedBox(width: 6),
+              _buildLayerFilterChip(1, 'CHANGES', ela.changedContentCount, const Color(0xFFFF0055)),
+              const SizedBox(width: 6),
+              _buildLayerFilterChip(2, 'OVERLAPPED', ela.overlappedContentCount, const Color(0xFFF59E0B)),
+              const SizedBox(width: 6),
+              _buildLayerFilterChip(3, 'HIDDEN', ela.hiddenContentCount, const Color(0xFFC084FC)),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Forensic Findings Breakdown List
+          if (ela.hotspotDescriptions.isNotEmpty) ...[
+            Container(
+              constraints: const BoxConstraints(maxHeight: 120),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0x18000000),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x15FFFFFF)),
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: ela.hotspotDescriptions.length,
+                separatorBuilder: (_, __) => const Divider(color: Color(0x10FFFFFF), height: 8),
+                itemBuilder: (context, i) {
+                  final desc = ela.hotspotDescriptions[i];
+                  final isChangeDesc = desc.toLowerCase().contains('altered') || desc.toLowerCase().contains('splic');
+                  final isOverlapDesc = desc.toLowerCase().contains('overlap') || desc.toLowerCase().contains('whiteout');
+                  final itemColor = isChangeDesc
+                      ? const Color(0xFFFF0055)
+                      : (isOverlapDesc ? const Color(0xFFF59E0B) : const Color(0xFFC084FC));
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(color: itemColor, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          desc,
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 10,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Gradient Scale Bar
           Row(
             children: [
               Text(
@@ -1908,7 +1981,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                     borderRadius: BorderRadius.circular(4),
                     gradient: const LinearGradient(
                       colors: [
-                        Color(0xFF0B192C),
+                        Color(0xFF0B2545),
                         Color(0xFF0284C7),
                         Color(0xFF10B981),
                         Color(0xFFF59E0B),
@@ -1926,6 +1999,51 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLayerFilterChip(int filterIndex, String label, int count, Color color) {
+    final isSelected = _elaLayerFilter == filterIndex;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _elaLayerFilter = filterIndex),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.22) : const Color(0x0EFFFFFF),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isSelected ? color : const Color(0x18FFFFFF),
+              width: 1.0,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : CyberTheme.textMuted,
+                  letterSpacing: 0.5,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 1),
+              Text(
+                '$count',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? color : CyberTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
