@@ -42,5 +42,38 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  
+  <!-- Zero-Trust Crypto Engine Integration -->
+  <script type="module">
+    import { runZkRedactMockUI } from './zkRedactEngine.js';
+    
+    // Inject Floating Action Buttons to trigger the mocked JS UI directly over Flutter
+    const fabContainer = document.createElement('div');
+    fabContainer.style.position = 'fixed';
+    fabContainer.style.bottom = '20px';
+    fabContainer.style.left = '20px';
+    fabContainer.style.zIndex = '999999';
+    fabContainer.style.display = 'flex';
+    fabContainer.style.flexDirection = 'column';
+    fabContainer.style.gap = '10px';
+    
+    const btnZk = document.createElement('button');
+    btnZk.innerText = 'Run zk-Redact Mock Dashboard';
+    btnZk.style.padding = '12px 20px';
+    btnZk.style.backgroundColor = '#34D399';
+    btnZk.style.color = '#000';
+    btnZk.style.border = 'none';
+    btnZk.style.borderRadius = '8px';
+    btnZk.style.fontWeight = 'bold';
+    btnZk.style.cursor = 'pointer';
+    btnZk.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
+    
+    btnZk.onclick = () => {
+      runZkRedactMockUI();
+    };
+
+    fabContainer.appendChild(btnZk);
+    document.body.appendChild(fabContainer);
+  </script>
 </body>
 </html>
