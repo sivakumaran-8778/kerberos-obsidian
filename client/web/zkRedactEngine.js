@@ -186,12 +186,22 @@ export function runZkRedactMockUI() {
     container.style.borderRadius = "8px";
     container.style.border = "1px solid #333";
     container.style.width = "800px";
-    container.style.margin = "20px auto";
+    container.style.position = "fixed";
+    container.style.top = "50px";
+    container.style.left = "50%";
+    container.style.transform = "translateX(-50%)";
+    container.style.zIndex = "9999999";
+    container.style.maxHeight = "80vh";
+    container.style.overflowY = "auto";
+    container.style.boxShadow = "0 10px 30px rgba(0,0,0,0.5)";
     container.innerHTML = `
-        <h2 style="color: #34D399; border-bottom: 1px solid #34D399; padding-bottom: 10px;">KERBEROS ZK-REDACT TERMINAL</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #34D399; padding-bottom: 10px; margin-bottom: 20px;">
+            <h2 style="color: #34D399; margin: 0;">KERBEROS ZK-REDACT TERMINAL</h2>
+            <button id="btnCloseZk" style="background: transparent; color: #EF4444; border: 1px solid #EF4444; border-radius: 4px; padding: 5px 10px; cursor: pointer; font-weight: bold;">X</button>
+        </div>
         <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-            <button id="btnRedact" style="background: #34D399; color: #000; padding: 10px; border: none; font-weight: bold; cursor: pointer;">1. Draw Redaction Box & Generate Proof</button>
-            <button id="btnVerify" style="background: #2563EB; color: #FFF; padding: 10px; border: none; font-weight: bold; cursor: pointer;" disabled>2. Verify Proof (Recipient)</button>
+            <button id="btnRedact" style="background: #34D399; color: #000; padding: 10px; border: none; font-weight: bold; cursor: pointer; border-radius: 4px;">1. Draw Redaction Box & Generate Proof</button>
+            <button id="btnVerify" style="background: #2563EB; color: #FFF; padding: 10px; border: none; font-weight: bold; cursor: pointer; border-radius: 4px;" disabled>2. Verify Proof (Recipient)</button>
         </div>
         <div id="redactOutput" style="white-space: pre-wrap; line-height: 1.5; min-height: 200px;">Waiting for user interaction...</div>
     `;
@@ -201,6 +211,11 @@ export function runZkRedactMockUI() {
     const output = document.getElementById('redactOutput');
     const btnRedact = document.getElementById('btnRedact');
     const btnVerify = document.getElementById('btnVerify');
+    const btnCloseZk = document.getElementById('btnCloseZk');
+    
+    btnCloseZk.addEventListener('click', () => {
+        container.remove();
+    });
 
     let generatedProofData = null;
     const mockFileBuffer = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02, 0x03]).buffer; // Mock PNG header
