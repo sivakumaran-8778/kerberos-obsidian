@@ -208,10 +208,10 @@ export function runZkRedactMockUI() {
 
     document.body.appendChild(container);
 
-    const output = document.getElementById('redactOutput');
-    const btnRedact = document.getElementById('btnRedact');
-    const btnVerify = document.getElementById('btnVerify');
-    const btnCloseZk = document.getElementById('btnCloseZk');
+    const output = container.querySelector('#redactOutput');
+    const btnRedact = container.querySelector('#btnRedact');
+    const btnVerify = container.querySelector('#btnVerify');
+    const btnCloseZk = container.querySelector('#btnCloseZk');
     
     btnCloseZk.addEventListener('click', () => {
         container.remove();
