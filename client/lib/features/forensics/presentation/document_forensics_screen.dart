@@ -14,6 +14,7 @@ import '../../../main.dart'; // for ledgerProvider
 import '../../ledger/models/provenance_record.dart';
 import '../models/document_forensic_models.dart';
 import '../services/document_forensic_service.dart';
+import '../services/crypto_engine.dart';
 import '../../verification/presentation/widgets/steganography_spatial_matrix.dart';
 
 class DocumentForensicsScreen extends ConsumerStatefulWidget {
@@ -717,7 +718,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               const Icon(Icons.refresh_rounded, size: 14),
               const SizedBox(width: 6),
               Text(
-                'AUDIT ANOTHER FILE',
+                'AUDIT ANOTHER',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -728,13 +729,111 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           ),
         );
 
+        final zkRedactButton = CyberButton(
+          variant: CyberButtonVariant.solid,
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          onTap: () async {
+            try {
+              final result = await CryptoEngineWeb.generateRedactionProof(
+                  report.originalFileBytes ?? Uint8List(0), 
+                  {'x': 10, 'y': 10, 'width': 100, 'height': 100});
+              
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: CyberTheme.emerald,
+                    content: Text(
+                      'ZK-REDACT PROOF GENERATED. Authenticity Preserved.',
+                      style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                );
+              }
+            } catch (e) {
+               if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: CyberTheme.coral,
+                    content: Text('ZK-REDACT FAILED: $e', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                );
+              }
+            }
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.draw_rounded, size: 14, color: Colors.black),
+              const SizedBox(width: 6),
+              Text('ZK-REDACT',
+                style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Colors.black),
+              ),
+            ],
+          ),
+        );
+
+        final evaluateProvenanceButton = CyberButton(
+          variant: CyberButtonVariant.solid,
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          onTap: () async {
+            try {
+              final result = await CryptoEngineWeb.evaluateProvenance(
+                  report.originalFileBytes ?? Uint8List(0), 
+                  {'issuer': 'Content Authenticity Initiative', 'manifestHash': report.sha256Hash});
+              
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: result['verdict'] == true ? CyberTheme.emerald : CyberTheme.coral,
+                    content: Text(
+                      result['verdict'] == true ? 'PROVENANCE VERIFIED. Chain of Custody intact.' : 'PROVENANCE PARADOX. Forged ledger detected.',
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                );
+              }
+            } catch (e) {
+               if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: CyberTheme.coral,
+                    content: Text('PROVENANCE EVALUATION FAILED: $e', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                );
+              }
+            }
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.security_rounded, size: 14, color: Colors.black),
+              const SizedBox(width: 6),
+              Text('EVALUATE PROVENANCE',
+                style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Colors.black),
+              ),
+            ],
+          ),
+        );
+
+        final actionButtons = Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            zkRedactButton,
+            evaluateProvenanceButton,
+            auditAnotherButton,
+          ],
+        );
+
         if (isNarrow) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               infoColumn,
               const SizedBox(height: 12),
-              auditAnotherButton,
+              actionButtons,
             ],
           );
         }
@@ -743,7 +842,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           children: [
             Expanded(child: infoColumn),
             const SizedBox(width: 14),
-            auditAnotherButton,
+            actionButtons,
           ],
         );
       },
