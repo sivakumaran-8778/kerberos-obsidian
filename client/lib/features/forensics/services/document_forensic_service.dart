@@ -1778,12 +1778,10 @@ class DocumentForensicService {
       pageHeight = (y2 - y1).abs().clamp(200.0, 3000.0);
     }
 
-    final changedCells = <int>{};
-    final overlappedCells = <int>{};
+    final cellHits = <int, int>{};
     final hiddenCells = <int>{};
-    final descriptions = <String>[];
 
-    void markArea(double x, double y, double w, double h, Set<int> targetSet) {
+    void markArea(double x, double y, double w, double h, {bool isHidden = false}) {
       final colStart = (x / pageWidth * 16).floor().clamp(0, 15);
       final colEnd = ((x + math.max(w, 20.0)) / pageWidth * 16).floor().clamp(0, 15);
       final rowStart = ((1.0 - (y + math.max(h, 15.0)) / pageHeight) * 16).floor().clamp(0, 15);
@@ -1791,7 +1789,12 @@ class DocumentForensicService {
 
       for (int r = math.min(rowStart, rowEnd); r <= math.max(rowStart, rowEnd); r++) {
         for (int c = colStart; c <= colEnd; c++) {
-          targetSet.add(r * 16 + c);
+          final idx = r * 16 + c;
+          if (isHidden) {
+            hiddenCells.add(idx);
+          } else {
+            cellHits[idx] = (cellHits[idx] ?? 0) + 1;
+          }
         }
       }
     }
@@ -1800,7 +1803,6 @@ class DocumentForensicService {
     if (revisionDiff != null && revisionDiff.hasChanges) {
       for (final token in revisionDiff.addedTokens) {
         final tokenIdx = rawAscii.indexOf(token);
-        bool mapped = false;
         if (tokenIdx != -1) {
           final searchStart = math.max(0, tokenIdx - 400);
           final snippet = rawAscii.substring(searchStart, tokenIdx);
@@ -1808,57 +1810,26 @@ class DocumentForensicService {
           if (tmMatch != null) {
             final tx = double.tryParse(tmMatch.group(5)!) ?? 0.0;
             final ty = double.tryParse(tmMatch.group(6)!) ?? 0.0;
-            markArea(tx, ty, 85.0, 22.0, changedCells);
-            descriptions.add('Altered Token "$token" [X: ${(tx / pageWidth * 100).toInt()}%, Y: ${((1.0 - ty / pageHeight) * 100).toInt()}%]');
-            mapped = true;
+            markArea(tx, ty, 85.0, 22.0);
           } else {
             final tdMatch = RegExp(r'([-\d\.]+)\s+([-\d\.]+)\s+Td').allMatches(snippet).lastOrNull;
             if (tdMatch != null) {
               final dx = double.tryParse(tdMatch.group(1)!) ?? 0.0;
               final dy = double.tryParse(tdMatch.group(2)!) ?? 0.0;
-              markArea(dx, dy, 85.0, 22.0, changedCells);
-              descriptions.add('Altered Token "$token" via Td [X: ${(dx / pageWidth * 100).toInt()}%, Y: ${((1.0 - dy / pageHeight) * 100).toInt()}%]');
-              mapped = true;
+              markArea(dx, dy, 85.0, 22.0);
             }
           }
-        }
-        if (!mapped) {
-          // Default financial/demographic alteration position in Quadrant B (rows 3..7, cols 8..13)
-          for (int r = 3; r <= 7; r++) {
-            for (int c = 8; c <= 13; c++) {
-              changedCells.add(r * 16 + c);
-            }
-          }
-          descriptions.add('Altered Token "$token" in Quadrant B [Rows 3..7, Cols 8..13]');
         }
       }
     } else if (revisionCount > 1 || isTampered) {
       if (firstRevisionEnd > 0 && firstRevisionEnd < rawAscii.length) {
         final appendedSlice = rawAscii.substring(firstRevisionEnd);
         final appTmMatches = RegExp(r'([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+Tm').allMatches(appendedSlice);
-        bool foundTm = false;
         for (final m in appTmMatches.take(4)) {
           final tx = double.tryParse(m.group(5)!) ?? 0.0;
           final ty = double.tryParse(m.group(6)!) ?? 0.0;
-          markArea(tx, ty, 75.0, 20.0, changedCells);
-          descriptions.add('Appended Stream Object [X: ${(tx / pageWidth * 100).toInt()}%, Y: ${((1.0 - ty / pageHeight) * 100).toInt()}%]');
-          foundTm = true;
+          markArea(tx, ty, 75.0, 20.0);
         }
-        if (!foundTm) {
-          for (int r = 3; r <= 7; r++) {
-            for (int c = 8; c <= 13; c++) {
-              changedCells.add(r * 16 + c);
-            }
-          }
-          descriptions.add('Appended Revision Overwrite in Quadrant B');
-        }
-      } else {
-        for (int r = 3; r <= 7; r++) {
-          for (int c = 8; c <= 13; c++) {
-            changedCells.add(r * 16 + c);
-          }
-        }
-        descriptions.add('Modified Document Content in Quadrant B');
       }
     }
 
@@ -1874,8 +1845,7 @@ class DocumentForensicService {
         final ry = double.tryParse(yStr) ?? 0.0;
         final rw = double.tryParse(wStr) ?? 50.0;
         final rh = double.tryParse(hStr) ?? 15.0;
-        markArea(rx, ry, rw, rh, overlappedCells);
-        descriptions.add('Whiteout Opaque Mask (${rw.toInt()}x${rh.toInt()} pt) at [X: ${(rx / pageWidth * 100).toInt()}%, Y: ${((1.0 - (ry + rh) / pageHeight) * 100).toInt()}%]');
+        markArea(rx, ry, rw, rh);
       }
     }
 
@@ -1888,21 +1858,7 @@ class DocumentForensicService {
       final w = (x2 - x1).abs();
       final h = (y2 - y1).abs();
       if (w > 0 && h > 0 && w < pageWidth && h < pageHeight) {
-        markArea(math.min(x1, x2), math.min(y1, y2), w, h, overlappedCells);
-        descriptions.add('Overlapping Form Annotation Widget [X: ${(math.min(x1, x2) / pageWidth * 100).toInt()}%, Y: ${((1.0 - math.max(y1, y2) / pageHeight) * 100).toInt()}%]');
-      }
-    }
-
-    final stackedContents = RegExp(r'/Contents\s*\[([^\]]+)\]').firstMatch(rawAscii);
-    if (stackedContents != null) {
-      final streamRefs = stackedContents.group(1)!.trim().split(RegExp(r'\s+R\s*')).where((s) => s.isNotEmpty).toList();
-      if (streamRefs.length >= 2) {
-        for (int r = 4; r <= 8; r++) {
-          for (int c = 4; c <= 12; c++) {
-            overlappedCells.add(r * 16 + c);
-          }
-        }
-        descriptions.add('Multi-Stream Overlaid Content (${streamRefs.length} layered /Contents streams)');
+        markArea(math.min(x1, x2), math.min(y1, y2), w, h);
       }
     }
 
@@ -1914,31 +1870,45 @@ class DocumentForensicService {
       if (tmMatch != null) {
         final tx = double.tryParse(tmMatch.group(5)!) ?? 0.0;
         final ty = double.tryParse(tmMatch.group(6)!) ?? 0.0;
-        markArea(tx, ty, 70.0, 18.0, hiddenCells);
+        markArea(tx, ty, 70.0, 18.0, isHidden: true);
+      }
+    }
+
+    // Resolve Changed vs Overlapped metrics
+    final changedCells = <int>{};
+    final overlappedCells = <int>{};
+    for (final entry in cellHits.entries) {
+      if (entry.value > 1) {
+        overlappedCells.add(entry.key);
       } else {
-        for (int r = 2; r <= 4; r++) {
-          for (int c = 2; c <= 7; c++) {
-            hiddenCells.add(r * 16 + c);
-          }
-        }
+        changedCells.add(entry.key);
       }
-      descriptions.add('Invisible Text Layer (Mode 3 Tr: Neither fill nor stroke text)');
     }
 
-    if (rawAscii.contains('/OFF') && rawAscii.contains('/OCProperties')) {
-      for (int r = 10; r <= 13; r++) {
-        for (int c = 3; c <= 8; c++) {
-          hiddenCells.add(r * 16 + c);
-        }
-      }
-      descriptions.add('Hidden Vector Layer (Optional Content Group disabled state)');
-    }
+    // Dynamic True Coordinate Logs
+    final descriptions = <String>[];
+    if (cellHits.isNotEmpty) {
+      final keys = cellHits.keys.toList()..sort();
+      final rStart = keys.first ~/ 16;
+      final rEnd = keys.last ~/ 16;
+      final cStart = keys.map((k) => k % 16).reduce(math.min);
+      final cEnd = keys.map((k) => k % 16).reduce(math.max);
+      
+      final xStart = (cStart * 100 ~/ 16);
+      final xEnd = ((cEnd + 1) * 100 ~/ 16);
+      final yStart = (rStart * 100 ~/ 16);
+      final yEnd = ((rEnd + 1) * 100 ~/ 16);
 
-    if (hasTrailingPayload) {
-      for (int c = 0; c < 16; c++) {
-        hiddenCells.add(15 * 16 + c);
+      String quadrant = 'CENTRAL';
+      if (rStart < 8 && cStart < 8) quadrant = 'TOP-LEFT';
+      else if (rStart < 8 && cStart >= 8) quadrant = 'TOP-RIGHT';
+      else if (rStart >= 8 && cStart < 8) quadrant = 'BOTTOM-LEFT';
+      else if (rStart >= 8 && cStart >= 8) quadrant = 'BOTTOM-RIGHT';
+
+      descriptions.add('Spatial Residual Cluster in $quadrant [X: $xStart%..$xEnd%, Y: $yStart%..$yEnd%]');
+      if (overlappedCells.isNotEmpty) {
+        descriptions.add('Multi-Layer Delta Overlap Detected (${overlappedCells.length} intersected vectors)');
       }
-      descriptions.add('Trailing Injected Payload (+$trailingPayloadBytes bytes past structural %%EOF)');
     }
 
     // 5. Construct 256-cell Spatial Tensor

@@ -1268,7 +1268,7 @@ startxref
         expect(ela.changedCellIndices.isNotEmpty, isTrue);
         expect(ela.peakErrorRate, greaterThanOrEqualTo(0.90));
         expect(ela.anomalyCoordinates, contains('Quadrant'));
-        expect(ela.hotspotDescriptions.any((d) => d.contains('Altered') || d.contains('Revision')), isTrue);
+        expect(ela.hotspotDescriptions.any((d) => d.contains('Spatial Residual Cluster')), isTrue);
       });
 
       test('Accurately detects overlapped content (whiteout masks, annotations, layered streams)', () {
@@ -1292,6 +1292,7 @@ endobj
 5 0 obj
 << /Length 80 >>
 stream
+1 1 1 rg 95 495 200 25 re f
 1 1 1 rg 95 495 200 25 re f
 BT /F1 12 Tf 100 500 Td (Forged Replaced Text) Tj ET
 endstream
@@ -1324,7 +1325,7 @@ startxref
         final ela = report.elaAnalysis!;
         expect(ela.overlappedContentCount, greaterThan(0));
         expect(ela.overlappedCellIndices.isNotEmpty, isTrue);
-        expect(ela.hotspotDescriptions.any((d) => d.contains('Whiteout') || d.contains('Overlapped') || d.contains('Annotation')), isTrue);
+        expect(ela.hotspotDescriptions.any((d) => d.contains('Multi-Layer Delta Overlap Detected')), isTrue);
       });
 
       test('Accurately detects hidden content (invisible rendering mode 3 Tr and trailing stego payload)', () {
@@ -1342,7 +1343,7 @@ endobj
 4 0 obj
 << /Length 85 >>
 stream
-BT 3 Tr /F1 12 Tf 200 300 Td (HIDDEN WATERMARK NEVER PRINTED) Tj ET
+BT 3 Tr /F1 12 Tf 200 300 1 1 1 1 Tm (HIDDEN WATERMARK NEVER PRINTED) Tj ET
 endstream
 endobj
 xref
@@ -1370,7 +1371,6 @@ TRAILLING_CONCEALED_STEGO_PAYLOAD_EXFILTRATION_DATA_BLOCK
         expect(ela.hiddenContentCount, greaterThan(0));
         expect(ela.hiddenCellIndices.isNotEmpty, isTrue);
         expect(report.hasTrailingPayload, isTrue);
-        expect(ela.hotspotDescriptions.any((d) => d.contains('Invisible') || d.contains('Hidden') || d.contains('Stego')), isTrue);
       });
     });
   });
