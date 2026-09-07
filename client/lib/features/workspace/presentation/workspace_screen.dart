@@ -969,13 +969,13 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         child: _buildProvenanceStudio(provenanceState),
                       ),
 
-                      // Page 2: Verification & QA Audit Page
+                      // Page 2: Verification Page
                       _buildPageLayout(
-                        title: 'ZERO-TRUST VERIFICATION & ATTACK QA',
+                        title: 'ZERO-TRUST FORENSIC VERIFICATION',
                         icon: Icons.verified_user_rounded,
-                        badge: 'BITSTREAM / STEGANOGRAPHY / JUMBF / SANITIZATION',
+                        badge: 'BITSTREAM / C2PA / STEGANOGRAPHY / LEDGER',
                         description:
-                            'Practical Quality Assurance (QA) testing protocol: Bitstream Shatter, Steganography Heat-Maps, Social Media Scrubbing, and UI Surface Sanitization.',
+                            'Cryptographic forensic validation protocol: Bitstream SHA-256 parity, C2PA JUMBF Manifest Envelope, Neural Perceptual Drift, and Immutable Ledger Anchors.',
                         child: const VerificationPage(),
                       ),
 
