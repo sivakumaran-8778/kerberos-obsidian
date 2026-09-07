@@ -125,6 +125,53 @@ class DocumentRevisionEntry {
   });
 }
 
+/// Error Level Analysis (ELA) spatial quantization matrix
+class DocumentElaAnalysis {
+  final List<double> heatmapTensor; // 256 normalized floats (16x16 grid)
+  final double peakErrorRate; // 0.0 to 1.0
+  final String anomalyCoordinates;
+  final bool hasSplicingAnomaly;
+
+  const DocumentElaAnalysis({
+    required this.heatmapTensor,
+    required this.peakErrorRate,
+    required this.anomalyCoordinates,
+    required this.hasSplicingAnomaly,
+  });
+}
+
+/// UIDAI Secure QR Code validation result
+class DocumentQrValidation {
+  final bool hasQrCode;
+  final bool isUidaiSigned;
+  final bool isTextMatchingQr;
+  final String? extractedDemographics;
+  final String? qrDiscrepancyDetail;
+
+  const DocumentQrValidation({
+    required this.hasQrCode,
+    required this.isUidaiSigned,
+    required this.isTextMatchingQr,
+    this.extractedDemographics,
+    this.qrDiscrepancyDetail,
+  });
+}
+
+/// Incremental PDF text stream diff (extracted between revision 1 and revision 2)
+class PdfRevisionDiff {
+  final List<String> removedTokens;
+  final List<String> addedTokens;
+  final String summary;
+
+  const PdfRevisionDiff({
+    required this.removedTokens,
+    required this.addedTokens,
+    required this.summary,
+  });
+
+  bool get hasChanges => removedTokens.isNotEmpty || addedTokens.isNotEmpty;
+}
+
 /// Complete forensic evaluation report for an uploaded document
 class DocumentForensicReport {
   final String fileName;
@@ -153,6 +200,11 @@ class DocumentForensicReport {
   final bool isSocialMediaCompressed;
   final String? digitalSignatureAlgorithm;
 
+  // Next-Gen Upgrades (ELA, QR Validation, PDF Stream Diff)
+  final DocumentElaAnalysis? elaAnalysis;
+  final DocumentQrValidation? qrValidation;
+  final PdfRevisionDiff? revisionDiff;
+
   const DocumentForensicReport({
     required this.fileName,
     required this.fileSizeBytes,
@@ -177,6 +229,9 @@ class DocumentForensicReport {
     this.isScreenshotOrScreenCapture = false,
     this.isSocialMediaCompressed = false,
     this.digitalSignatureAlgorithm,
+    this.elaAnalysis,
+    this.qrValidation,
+    this.revisionDiff,
   });
 
   bool get isTampered =>

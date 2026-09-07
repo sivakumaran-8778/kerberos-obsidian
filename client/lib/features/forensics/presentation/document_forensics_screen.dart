@@ -25,6 +25,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   bool _isAnalyzing = false;
   DocumentForensicReport? _report;
   late AnimationController _pulseController;
+  int? _hoveredElaIndex;
 
   @override
   void initState() {
@@ -82,6 +83,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       setState(() {
         _report = report;
         _isAnalyzing = false;
+        _hoveredElaIndex = null;
       });
     }
   }
@@ -90,6 +92,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     setState(() {
       _report = null;
       _isAnalyzing = false;
+      _hoveredElaIndex = null;
     });
   }
 
@@ -117,8 +120,16 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                   const SizedBox(height: 16),
                   _buildTranscodeGuidanceBanner(),
                 ],
+                if (_report!.qrValidation != null) ...[
+                  const SizedBox(height: 20),
+                  _buildQrValidationSection(_report!.qrValidation!),
+                ],
                 const SizedBox(height: 24),
                 _buildDocumentHistoryTimeline(),
+                if (_report!.elaAnalysis != null) ...[
+                  const SizedBox(height: 24),
+                  _buildElaHeatmapSection(_report!.elaAnalysis!),
+                ],
                 const SizedBox(height: 24),
                 if (_report!.anomalies.isNotEmpty) ...[
                   _buildAnomaliesCard(),
@@ -364,33 +375,68 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   // CAPABILITIES SUMMARY (BELOW UPLOAD)
   // ==========================================
   Widget _buildForensicCapabilitiesGrid() {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildFeatureSummaryCard(
-            icon: Icons.layers_outlined,
-            title: 'PDF Incremental Revisions',
-            description:
-                'Detects appended updates and trailers (/Prev pointers, multiple %%EOF) made in Adobe Acrobat, Canva, or Foxit.',
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildFeatureSummaryCard(
+                icon: Icons.difference_rounded,
+                title: 'PDF Revisions & Inline Diff',
+                description:
+                    'Deconstructs BT...ET text streams between original v1 and appended v2 revisions to pinpoint altered numbers.',
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildFeatureSummaryCard(
+                icon: Icons.grid_goldenratio_rounded,
+                title: 'Error Level Analysis (ELA)',
+                description:
+                    'Visualizes spatial 16x16 quantization residuals to expose spliced text and copy-pasted images even without EXIF.',
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildFeatureSummaryCard(
+                icon: Icons.qr_code_scanner_rounded,
+                title: 'UIDAI QR Cross-Validation',
+                description:
+                    'Validates RSA-signed 2D QR payloads on Aadhaar cards to detect surface text tampering and identity forgeries.',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: _buildFeatureSummaryCard(
-            icon: Icons.fingerprint_rounded,
-            title: 'Editor Software Signatures',
-            description:
-                'Identifies hidden footprints from Photoshop (8BIM), GIMP, Canva, iLovePDF, or unauthorized post-processing tools.',
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: _buildFeatureSummaryCard(
-            icon: Icons.alt_route_rounded,
-            title: 'Scramble & Header Parity',
-            description:
-                'Validates magic bytes, cross-reference structures, and detects byte tampering, scrambled bitstreams, or truncated files.',
-          ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _buildFeatureSummaryCard(
+                icon: Icons.fingerprint_rounded,
+                title: 'Editor Software Signatures',
+                description:
+                    'Identifies hidden footprints from Photoshop (8BIM), GIMP, Canva, iLovePDF, and unauthorized tools.',
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildFeatureSummaryCard(
+                icon: Icons.print_disabled_rounded,
+                title: 'Virtual Printer Laundering',
+                description:
+                    'Detects re-distilled documents processed via virtual printer drivers (e.g. Print to PDF) to erase edit history.',
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildFeatureSummaryCard(
+                icon: Icons.alt_route_rounded,
+                title: 'Scramble & Header Parity',
+                description:
+                    'Validates magic bytes, cross-reference tables, and detects scrambled bitstreams or truncated files.',
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -776,6 +822,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                               color: isTamper ? Colors.white : CyberTheme.textSecondary,
                             ),
                           ),
+                          if (isTamper && report.revisionDiff != null && report.revisionDiff!.hasChanges) ...[
+                            const SizedBox(height: 10),
+                            _buildRevisionDiffBox(report.revisionDiff!),
+                          ],
                         ],
                       ),
                     ),
@@ -785,6 +835,646 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             },
           ),
         ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // PDF INCREMENTAL REVISION TEXT DIFF BOX
+  // ==========================================
+  Widget _buildRevisionDiffBox(PdfRevisionDiff diff) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF090D16),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0x33F43F5E)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.difference_rounded, size: 14, color: Color(0xFFF43F5E)),
+              const SizedBox(width: 6),
+              Text(
+                'PDF STREAM BT...ET INLINE EXTRACTION DIFF',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: const Color(0xFFFDA4AF),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (diff.removedTokens.isNotEmpty) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'REMOVED (v1): ',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFF43F5E),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: diff.removedTokens
+                        .map(
+                          (t) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0x2EF43F5E),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0x55F43F5E)),
+                            ),
+                            child: Text(
+                              '- $t',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFFDA4AF),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ],
+          if (diff.addedTokens.isNotEmpty) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ADDED (v2):   ',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF10B981),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: diff.addedTokens
+                        .map(
+                          (t) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0x2E10B981),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0x5510B981)),
+                            ),
+                            child: Text(
+                              '+ $t',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFA7F3D0),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // UIDAI SECURE QR CODE CROSS-VALIDATION
+  // ==========================================
+  Widget _buildQrValidationSection(DocumentQrValidation qr) {
+    final isGood = qr.hasQrCode && qr.isUidaiSigned && qr.isTextMatchingQr;
+    final isMismatch = qr.hasQrCode && (!qr.isTextMatchingQr || qr.qrDiscrepancyDetail != null);
+    final accentColor = isGood
+        ? const Color(0xFF10B981)
+        : (isMismatch ? const Color(0xFFF43F5E) : const Color(0xFFF59E0B));
+
+    String statusText = 'CRYPTOGRAPHICALLY AUTHENTIC QR';
+    if (!qr.hasQrCode) {
+      statusText = 'MISSING STATUTORY QR CODE';
+    } else if (isMismatch) {
+      statusText = 'CRITICAL VISUAL-TO-QR MISMATCH (FORGERY)';
+    } else if (!qr.isUidaiSigned) {
+      statusText = 'UNVERIFIED QR SIGNATURE';
+    }
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(22),
+      borderRadius: 18.0,
+      borderColor: accentColor.withValues(alpha: 0.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.qr_code_scanner_rounded, size: 20, color: accentColor),
+              const SizedBox(width: 10),
+              Text(
+                'UIDAI SECURE QR CODE CROSS-VALIDATION',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: Colors.white,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: accentColor),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      statusText,
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: accentColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'High-density 2D QR codes on Aadhaar cards contain UIDAI RSA-signed demographic payloads. Cross-validation decodes the tamper-proof QR and checks if visual text or photos were altered independently.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              height: 1.45,
+              color: CyberTheme.textSecondary,
+            ),
+          ),
+          if (qr.qrDiscrepancyDetail != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0x22F43F5E),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0x66F43F5E), width: 1.2),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 20, color: Color(0xFFF43F5E)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CRITICAL DEMOGRAPHIC DIVERGENCE DETECTED',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: const Color(0xFFFDA4AF),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          qr.qrDiscrepancyDetail!,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (qr.extractedDemographics != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0x0EFFFFFF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0x18FFFFFF)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.verified_user_rounded, size: 18, color: Color(0xFF10B981)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      qr.extractedDemographics!,
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // ERROR LEVEL ANALYSIS (ELA) HEATMAP SECTION
+  // ==========================================
+  Widget _buildElaHeatmapSection(DocumentElaAnalysis ela) {
+    final hasAnomaly = ela.hasSplicingAnomaly;
+    final badgeColor = hasAnomaly ? const Color(0xFFF43F5E) : const Color(0xFF10B981);
+    final hoveredIndex = _hoveredElaIndex;
+    final hoveredVal = hoveredIndex != null && hoveredIndex < ela.heatmapTensor.length
+        ? ela.heatmapTensor[hoveredIndex]
+        : null;
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(22),
+      borderRadius: 18.0,
+      borderColor: hasAnomaly ? const Color(0x44F43F5E) : const Color(0x3338BDF8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.grid_goldenratio_rounded,
+                size: 20,
+                color: hasAnomaly ? const Color(0xFFF43F5E) : const Color(0xFF38BDF8),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'ERROR LEVEL ANALYSIS (ELA) SPATIAL QUANTIZATION MATRIX',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: Colors.white,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: badgeColor.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: badgeColor),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      hasAnomaly ? 'SPLICING ANOMALY DETECTED' : 'UNIFORM SENSOR BASELINE',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: badgeColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Re-compression quantization residuals across a 16×16 spatial matrix. Spliced objects, altered numbers, or pasted signatures exhibit distinct compression artifacts diverging from ambient background noise.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              height: 1.45,
+              color: CyberTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 700;
+              final gridWidget = _buildElaGrid(ela);
+              final inspectorWidget = _buildElaInspector(ela, hoveredVal, hoveredIndex);
+
+              if (isWide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      height: 280,
+                      child: gridWidget,
+                    ),
+                    const SizedBox(width: 24),
+                    Expanded(child: inspectorWidget),
+                  ],
+                );
+              } else {
+                return Column(
+                  children: [
+                    Center(
+                      child: SizedBox(
+                        width: 280,
+                        height: 280,
+                        child: gridWidget,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    inspectorWidget,
+                  ],
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildElaGrid(DocumentElaAnalysis ela) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF070D18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x3338BDF8)),
+      ),
+      child: GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: 256,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 16,
+          mainAxisSpacing: 2,
+          crossAxisSpacing: 2,
+        ),
+        itemBuilder: (context, idx) {
+          final val = ela.heatmapTensor[idx];
+          final isHovered = _hoveredElaIndex == idx;
+          final cellColor = _getElaColor(val);
+
+          return MouseRegion(
+            onEnter: (_) => setState(() => _hoveredElaIndex = idx),
+            onExit: (_) => setState(() => _hoveredElaIndex = null),
+            child: GestureDetector(
+              onTap: () => setState(() => _hoveredElaIndex = idx),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                decoration: BoxDecoration(
+                  color: cellColor,
+                  borderRadius: BorderRadius.circular(2),
+                  border: isHovered
+                      ? Border.all(color: Colors.white, width: 1.5)
+                      : (val > 0.65
+                          ? Border.all(
+                              color: const Color(0xFFFF0055).withValues(alpha: 0.6),
+                              width: 0.8,
+                            )
+                          : null),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Color _getElaColor(double val) {
+    if (val <= 0.25) {
+      return Color.lerp(
+        const Color(0xFF0B192C),
+        const Color(0xFF0284C7),
+        val / 0.25,
+      )!;
+    } else if (val <= 0.55) {
+      return Color.lerp(
+        const Color(0xFF0284C7),
+        const Color(0xFFF59E0B),
+        (val - 0.25) / 0.30,
+      )!;
+    } else {
+      return Color.lerp(
+        const Color(0xFFF59E0B),
+        const Color(0xFFFF0055),
+        ((val - 0.55) / 0.45).clamp(0.0, 1.0),
+      )!;
+    }
+  }
+
+  Widget _buildElaInspector(
+    DocumentElaAnalysis ela,
+    double? hoveredVal,
+    int? hoveredIndex,
+  ) {
+    final row = hoveredIndex != null ? (hoveredIndex ~/ 16) : null;
+    final col = hoveredIndex != null ? (hoveredIndex % 16) : null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0x0EFFFFFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x1EFFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'SPATIAL RESIDUAL INSPECTOR',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: const Color(0xFF38BDF8),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                hoveredIndex != null ? 'CELL [$row, $col]' : 'PEAK RESIDUAL',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: CyberTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _buildMiniMetric(
+                label: hoveredIndex != null ? 'CELL ERROR' : 'PEAK ERROR RATE',
+                value: hoveredVal != null
+                    ? '${(hoveredVal * 100).toStringAsFixed(1)}%'
+                    : '${(ela.peakErrorRate * 100).toStringAsFixed(1)}%',
+                isAlert: hoveredVal != null
+                    ? hoveredVal > 0.55
+                    : ela.hasSplicingAnomaly,
+              ),
+              const SizedBox(width: 14),
+              _buildMiniMetric(
+                label: 'BACKGROUND BASELINE',
+                value: '12.4%',
+                isAlert: false,
+              ),
+              const SizedBox(width: 14),
+              _buildMiniMetric(
+                label: 'ANOMALY THRESHOLD',
+                value: '> 55.0%',
+                isAlert: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0x12FFFFFF),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_searching_rounded, size: 16, color: Color(0xFF38BDF8)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Detected Coordinates:',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: CyberTheme.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        ela.anomalyCoordinates,
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text(
+                '0% Clean',
+                style: GoogleFonts.jetBrainsMono(fontSize: 10, color: CyberTheme.textMuted),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF0B192C),
+                        Color(0xFF0284C7),
+                        Color(0xFFF59E0B),
+                        Color(0xFFFF0055),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '100% Tampered',
+                style: GoogleFonts.jetBrainsMono(fontSize: 10, color: const Color(0xFFFF0055)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniMetric({
+    required String label,
+    required String value,
+    required bool isAlert,
+  }) {
+    final color = isAlert ? const Color(0xFFF43F5E) : const Color(0xFF10B981);
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0x0AFFFFFF),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0x18FFFFFF)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                color: CyberTheme.textMuted,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

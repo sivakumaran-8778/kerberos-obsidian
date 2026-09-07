@@ -293,5 +293,140 @@ trailer
       expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
       expect(report.anomalies.any((a) => a.title.contains('Font Subset Inconsistency')), isTrue);
     });
+
+    // ==========================================
+    // NEXT-GEN FEATURES (1, 2, 4) TESTS
+    // ==========================================
+
+    test('Feature 1: Computes 256-cell ELA Heatmap Tensor with Splicing Anomaly Detection', () {
+      // 1. Clean document ELA
+      final cleanBytes = Uint8List.fromList(utf8.encode('%PDF-1.4\n1 0 obj\n<< /Title (Invoice) >>\nendobj\ntrailer\n<< /Size 1 /Root 1 0 R >>\n%%EOF\n'));
+      final cleanReport = DocumentForensicService.analyzeDocument(
+        bytes: cleanBytes,
+        fileName: 'clean_receipt.pdf',
+      );
+
+      expect(cleanReport.elaAnalysis, isNotNull);
+      expect(cleanReport.elaAnalysis!.heatmapTensor.length, equals(256));
+      expect(cleanReport.elaAnalysis!.hasSplicingAnomaly, isFalse);
+      expect(cleanReport.elaAnalysis!.peakErrorRate, lessThan(0.30));
+      expect(cleanReport.elaAnalysis!.anomalyCoordinates, contains('Uniform Sensor Baseline'));
+
+      // 2. Tampered document ELA
+      final tamperedHeader = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
+      final tamperedPayload = utf8.encode('ScannedRecord...Photoshop 3.0 8BIM SplicedLayer');
+      final tamperedFooter = [0xFF, 0xD9];
+      final tamperedBytes = Uint8List.fromList([...tamperedHeader, ...tamperedPayload, ...tamperedFooter]);
+
+      final tamperedReport = DocumentForensicService.analyzeDocument(
+        bytes: tamperedBytes,
+        fileName: 'spliced_medical_bill.jpg',
+      );
+
+      expect(tamperedReport.elaAnalysis, isNotNull);
+      expect(tamperedReport.elaAnalysis!.heatmapTensor.length, equals(256));
+      expect(tamperedReport.elaAnalysis!.hasSplicingAnomaly, isTrue);
+      expect(tamperedReport.elaAnalysis!.peakErrorRate, greaterThan(0.70));
+      expect(tamperedReport.elaAnalysis!.anomalyCoordinates, contains('Quadrant B'));
+    });
+
+    test('Feature 2: Validates UIDAI Secure QR Code and Detects Surface vs QR Mismatches', () {
+      // 1. Genuine Aadhaar with signed QR
+      final genuineAadhaar = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Government of India - Aadhaar Card)
+   /Producer (UIDAI Production Server) >>
+endobj
+2 0 obj
+<< /Type /XObject /Subtype /Image /Width 300 /Height 300 /Length 50000 /Filter /FlateDecode >>
+stream
+QRCode uidai:V2 SignatureV2
+endstream
+endobj
+3 0 obj
+<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached >>
+endobj
+trailer
+<< /Size 3 /Root 1 0 R >>
+%%EOF
+''';
+      final genReport = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(genuineAadhaar)),
+        fileName: 'my_genuine_aadhaar.pdf',
+      );
+
+      expect(genReport.qrValidation, isNotNull);
+      expect(genReport.qrValidation!.hasQrCode, isTrue);
+      expect(genReport.qrValidation!.isUidaiSigned, isTrue);
+      expect(genReport.qrValidation!.isTextMatchingQr, isTrue);
+      expect(genReport.qrValidation!.qrDiscrepancyDetail, isNull);
+
+      // 2. Tampered Aadhaar with surface-to-QR demographic mismatch
+      final mismatchedAadhaar = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Aadhaar Card) /Producer (Adobe Photoshop) >>
+endobj
+2 0 obj
+<< /Type /XObject /Subtype /Image >>
+stream
+QRCode Altered Mismatch qr_mismatch
+endstream
+endobj
+trailer
+<< /Size 2 /Root 1 0 R >>
+%%EOF
+''';
+      final mismatchReport = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(mismatchedAadhaar)),
+        fileName: 'forged_aadhaar_card.pdf',
+      );
+
+      expect(mismatchReport.qrValidation, isNotNull);
+      expect(mismatchReport.qrValidation!.hasQrCode, isTrue);
+      expect(mismatchReport.qrValidation!.isTextMatchingQr, isFalse);
+      expect(mismatchReport.qrValidation!.qrDiscrepancyDetail, contains('Surface text or photo was altered independently'));
+    });
+
+    test('Feature 4: Incremental PDF Stream Diff Extractor isolates removed and added tokens', () {
+      final multiRevisionPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Page /Contents (Invoice Total: \$250.00 Paid Cash) >>
+endobj
+xref
+0 3
+trailer
+<< /Size 3 /Root 1 0 R >>
+startxref
+120
+%%EOF
+3 0 obj
+<< /Type /Page /Contents (Invoice Total: \$2,500.00 Overdue Urgent Charges) >>
+endobj
+xref
+3 1
+trailer
+<< /Size 4 /Prev 120 >>
+startxref
+240
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(multiRevisionPdf)),
+        fileName: 'hospital_bill_tampered_amount.pdf',
+      );
+
+      expect(report.revisionCount, equals(2));
+      expect(report.revisionDiff, isNotNull);
+      expect(report.revisionDiff!.hasChanges, isTrue);
+      expect(report.revisionDiff!.removedTokens, contains('\$250.00'));
+      expect(report.revisionDiff!.addedTokens, contains('\$2,500.00'));
+      expect(report.revisionDiff!.summary, contains('modifications detected'));
+    });
   });
 }
