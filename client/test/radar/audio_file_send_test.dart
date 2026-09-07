@@ -71,6 +71,17 @@ class MockLedgerService extends Fake implements LedgerService {
     savedRecords.add(record);
   }
 
+  @override
+  ProvenanceRecord? getRecordByHash(String sha256Hash, {String? filterEmail}) {
+    return savedRecords.cast<ProvenanceRecord?>().firstWhere(
+      (r) => r?.originalFileHash.toLowerCase() == sha256Hash.toLowerCase(),
+      orElse: () => null,
+    );
+  }
+
+  @override
+  List<ProvenanceRecord> getHistory({String? filterEmail}) => savedRecords;
+
   List<ProvenanceRecord> get records => savedRecords;
 
   Future<void> clearAll() async {

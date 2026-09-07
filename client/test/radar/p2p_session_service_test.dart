@@ -11,6 +11,7 @@ import 'package:kerberos_client/features/network/providers/network_providers.dar
 import 'package:kerberos_client/features/network/services/webrtc_service.dart';
 import 'package:kerberos_client/features/network/services/signaling_service.dart';
 import 'package:kerberos_client/features/ledger/services/ledger_service.dart';
+import 'package:kerberos_client/features/ledger/models/provenance_record.dart';
 import 'package:kerberos_client/main.dart';
 
 class MockWebRTCService extends Fake implements WebRTCService {
@@ -87,6 +88,12 @@ class MockLedgerService extends Fake with ChangeNotifier implements LedgerServic
   Future<void> addRecord(dynamic record) async {
     notifyListeners();
   }
+
+  @override
+  ProvenanceRecord? getRecordByHash(String sha256Hash, {String? filterEmail}) => null;
+
+  @override
+  List<ProvenanceRecord> getHistory({String? filterEmail}) => [];
 }
 
 void main() {

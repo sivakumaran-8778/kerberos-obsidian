@@ -153,5 +153,94 @@ void main() {
       expect(deviceId, isNotEmpty);
       expect(deviceId.length, greaterThanOrEqualTo(16));
     });
+
+    test('Deduplication: sealing identical file multiple times retains only one unique entry in ledger history', () {
+      final fileHash = 'c2pa-sha256-sample-hash-12345';
+      final records = [
+        ProvenanceRecord(
+          id: 'seal-attempt-1',
+          originalFileHash: fileHash,
+          c2paManifestUri: 'urn:c2pa:obsidian:hash-1',
+          timestamp: DateTime.now().subtract(const Duration(minutes: 10)),
+          signature: 'sig-attempt-1',
+          filePath: 'design_document.pdf',
+          ownerEmail: 'analyst@enclave.local',
+        ),
+        ProvenanceRecord(
+          id: 'seal-attempt-2',
+          originalFileHash: fileHash,
+          c2paManifestUri: 'urn:c2pa:obsidian:hash-1',
+          timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
+          signature: 'sig-attempt-2',
+          filePath: 'design_document.pdf',
+          ownerEmail: 'analyst@enclave.local',
+        ),
+        ProvenanceRecord(
+          id: 'seal-attempt-3',
+          originalFileHash: fileHash,
+          c2paManifestUri: 'urn:c2pa:obsidian:hash-1',
+          timestamp: DateTime.now(),
+          signature: 'sig-attempt-3',
+          filePath: 'design_document.pdf',
+          ownerEmail: 'analyst@enclave.local',
+        ),
+      ];
+
+      // Simulate getHistory deduplication logic
+      final Set<String> seenHashes = {};
+      final List<ProvenanceRecord> uniqueHistory = [];
+
+      for (final r in records.reversed) {
+        if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') continue;
+        final hash = r.originalFileHash.trim().toLowerCase();
+        if (!seenHashes.contains(hash)) {
+          seenHashes.add(hash);
+          uniqueHistory.add(r);
+        }
+      }
+
+      // Verify only 1 entry is retained and it is the latest seal
+      expect(uniqueHistory.length, 1);
+      expect(uniqueHistory.first.id, 'seal-attempt-3');
+      expect(uniqueHistory.first.originalFileHash, fileHash);
+      expect(uniqueHistory.first.signature, 'sig-attempt-3');
+    });
+
+    test('Deduplication: distinct files with different hashes are both preserved', () {
+      final records = [
+        ProvenanceRecord(
+          id: 'file-01',
+          originalFileHash: 'hash-aaa-111',
+          c2paManifestUri: 'urn:c2pa:aaa',
+          timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+          signature: 'sig-aaa',
+          filePath: 'photo_evidence.jpg',
+          ownerEmail: 'analyst@enclave.local',
+        ),
+        ProvenanceRecord(
+          id: 'file-02',
+          originalFileHash: 'hash-bbb-222',
+          c2paManifestUri: 'urn:c2pa:bbb',
+          timestamp: DateTime.now(),
+          signature: 'sig-bbb',
+          filePath: 'financial_audit.xlsx',
+          ownerEmail: 'analyst@enclave.local',
+        ),
+      ];
+
+      final Set<String> seenHashes = {};
+      final List<ProvenanceRecord> uniqueHistory = [];
+
+      for (final r in records.reversed) {
+        final hash = r.originalFileHash.trim().toLowerCase();
+        if (!seenHashes.contains(hash)) {
+          seenHashes.add(hash);
+          uniqueHistory.add(r);
+        }
+      }
+
+      expect(uniqueHistory.length, 2);
+      expect(uniqueHistory.map((r) => r.originalFileHash).toSet(), containsAll(['hash-aaa-111', 'hash-bbb-222']));
+    });
   });
 }

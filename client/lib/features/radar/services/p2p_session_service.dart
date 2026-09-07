@@ -538,7 +538,7 @@ class P2PSessionService extends ChangeNotifier {
           ? 'urn:c2pa:obsidian:voice:${metadata.sha256Hash.substring(0, 12)}'
           : 'urn:c2pa:obsidian:${metadata.sha256Hash.substring(0, 12)}';
       
-      // 2. Seal into air-gapped AES-256 Hive ledger
+      // 2. Seal into air-gapped AES-256 Hive ledger (deduplicated by hash in LedgerService)
       final userEmail = _signaling.userEmail;
       final record = ProvenanceRecord(
         id: const Uuid().v4(),

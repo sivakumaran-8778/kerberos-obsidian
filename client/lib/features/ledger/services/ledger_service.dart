@@ -58,25 +58,82 @@ class LedgerService extends ChangeNotifier {
     for (final k in sampleKeys) {
       await _box.delete(k);
     }
+
+    // DEDUPLICATE RECORDS: Purge any legacy duplicate records with identical hash & owner
+    final Map<String, String> seenHashToKey = {};
+    final List<dynamic> duplicateKeysToDelete = [];
+
+    for (final key in _box.keys) {
+      final rec = _box.get(key);
+      if (rec == null) continue;
+      if (rec.id == 'sample-satellite-01' || rec.filePath == 'satellite_recon_delta_09.png') continue;
+
+      final hash = rec.originalFileHash.trim().toLowerCase();
+      final owner = rec.ownerEmail?.trim().toLowerCase() ?? '';
+      final compositeKey = '$owner::$hash';
+
+      if (seenHashToKey.containsKey(compositeKey)) {
+        duplicateKeysToDelete.add(key);
+      } else {
+        seenHashToKey[compositeKey] = key.toString();
+      }
+    }
+
+    for (final dupKey in duplicateKeysToDelete) {
+      await _box.delete(dupKey);
+    }
   }
 
-  /// Appends a new cryptographically sealed record into the ledger and triggers cloud sync.
+  /// Appends or updates a cryptographically sealed record in the ledger and triggers cloud sync.
+  /// Enforces deduplication by originalFileHash (SHA-256) so sealing the same file multiple times
+  /// updates the existing entry in-place rather than generating duplicate entries.
   Future<void> addRecord(ProvenanceRecord record) async {
     if (!_box.isOpen) {
       throw Exception("Zero-Trust Fault: Unauthorized attempted write to closed ledger.");
     }
 
-    final currentEmail = _supabase?.auth.currentUser?.email;
-    final recordToSave = (record.ownerEmail == null && currentEmail != null && currentEmail.isNotEmpty)
-        ? record.copyWith(ownerEmail: currentEmail)
-        : record;
+    final currentEmail = _supabase?.auth.currentUser?.email?.trim().toLowerCase();
+    final effectiveEmail = (record.ownerEmail == null && currentEmail != null && currentEmail.isNotEmpty)
+        ? currentEmail
+        : record.ownerEmail?.trim().toLowerCase();
 
-    await _box.put(recordToSave.id, recordToSave);
+    final targetHash = record.originalFileHash.trim().toLowerCase();
+
+    // Check for existing records matching this hash and owner email
+    final matchingKeys = _box.keys.where((k) {
+      final r = _box.get(k);
+      if (r == null) return false;
+      if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') return false;
+      if (r.originalFileHash.trim().toLowerCase() != targetHash) return false;
+
+      if (effectiveEmail != null && effectiveEmail.isNotEmpty) {
+        final rOwner = r.ownerEmail?.trim().toLowerCase();
+        return rOwner == null || rOwner == effectiveEmail;
+      }
+      return true;
+    }).toList();
+
+    String targetId = record.id;
+    if (matchingKeys.isNotEmpty) {
+      // Reuse the first existing record's ID to update in-place
+      targetId = matchingKeys.first.toString();
+      // If there are any stray duplicates beyond the first, purge them
+      for (int i = 1; i < matchingKeys.length; i++) {
+        await _box.delete(matchingKeys[i]);
+      }
+    }
+
+    final recordToSave = record.copyWith(
+      id: targetId,
+      ownerEmail: effectiveEmail ?? record.ownerEmail,
+    );
+
+    await _box.put(targetId, recordToSave);
     notifyListeners();
 
     // Asynchronously synchronize with authenticated user's cloud account
-    if (currentEmail != null && currentEmail.isNotEmpty && _supabase != null) {
-      unawaited(_syncLocalRecordsToCloud(currentEmail));
+    if (effectiveEmail != null && effectiveEmail.isNotEmpty && _supabase != null) {
+      unawaited(_syncLocalRecordsToCloud(effectiveEmail));
     }
   }
 
@@ -88,29 +145,59 @@ class LedgerService extends ChangeNotifier {
     return _box.get(id);
   }
 
+  /// Retrieves a provenance record by its SHA-256 file hash.
+  /// Optionally scopes to a specific owner email.
+  ProvenanceRecord? getRecordByHash(String sha256Hash, {String? filterEmail}) {
+    if (!_box.isOpen) return null;
+    final targetHash = sha256Hash.trim().toLowerCase();
+    final targetEmail = (filterEmail ?? _supabase?.auth.currentUser?.email)?.trim().toLowerCase();
+
+    for (final r in _box.values) {
+      if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') continue;
+      if (r.originalFileHash.trim().toLowerCase() == targetHash) {
+        if (targetEmail != null && targetEmail.isNotEmpty) {
+          final owner = r.ownerEmail?.trim().toLowerCase();
+          if (owner != null && owner != targetEmail) continue;
+        }
+        return r;
+      }
+    }
+    return null;
+  }
+
   /// Retrieves all sealed records in the ledger, excluding sample assets.
+  /// Enforces unique representation by file hash so duplicate entries never appear.
   /// Optionally filters by user email so records are cleanly partitioned per account.
   List<ProvenanceRecord> getHistory({String? filterEmail}) {
     if (!_box.isOpen) return [];
 
     final targetEmail = (filterEmail ?? _supabase?.auth.currentUser?.email)?.trim().toLowerCase();
+    final Set<String> seenHashes = {};
+    final List<ProvenanceRecord> uniqueRecords = [];
 
-    final records = _box.values.where((r) {
+    // Traverse in reverse chronological order (newest first)
+    for (final r in _box.values.toList().reversed) {
       // Never display sample or demo assets in the ledger
       if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') {
-        return false;
+        continue;
       }
 
       if (targetEmail != null && targetEmail.isNotEmpty) {
         final recordOwner = r.ownerEmail?.trim().toLowerCase();
         // Return records owned by this email, or legacy unassigned records
-        return recordOwner == null || recordOwner == targetEmail;
+        if (recordOwner != null && recordOwner != targetEmail) {
+          continue;
+        }
       }
 
-      return true;
-    }).toList();
+      final hash = r.originalFileHash.trim().toLowerCase();
+      if (!seenHashes.contains(hash)) {
+        seenHashes.add(hash);
+        uniqueRecords.add(r);
+      }
+    }
 
-    return records.reversed.toList();
+    return uniqueRecords;
   }
 
   /// Retrieves the most recently sealed asset for quick P2P transfer.
@@ -122,7 +209,7 @@ class LedgerService extends ChangeNotifier {
 
   /// Synchronizes ledger records between local Hive storage and Supabase user metadata.
   /// When a user logs in on Computer 2 with their email, this populates Computer 2's ledger
-  /// with the files sealed previously on Computer 1.
+  /// with the files sealed previously on Computer 1 without duplicates.
   Future<void> syncWithUserAccount(User user) async {
     if (!_box.isOpen) return;
     final userEmail = user.email?.trim().toLowerCase();
@@ -134,6 +221,7 @@ class LedgerService extends ChangeNotifier {
     final meta = user.userMetadata;
     final remoteRaw = meta?['sealed_ledger_records'];
     final Set<String> knownIds = {};
+    final Set<String> knownHashes = {};
 
     if (remoteRaw is List) {
       for (final item in remoteRaw) {
@@ -141,13 +229,31 @@ class LedgerService extends ChangeNotifier {
           try {
             final record = ProvenanceRecord.fromJson(Map<String, dynamic>.from(item));
             if (record.id.isNotEmpty && record.id != 'sample-satellite-01' && record.filePath != 'satellite_recon_delta_09.png') {
+              final hash = record.originalFileHash.trim().toLowerCase();
+              if (knownHashes.contains(hash)) {
+                continue; // Skip duplicate remote entries for same file hash
+              }
+              knownHashes.add(hash);
               knownIds.add(record.id);
-              final existing = _box.get(record.id);
-              if (existing == null) {
+
+              final existingById = _box.get(record.id);
+              final existingByHash = _box.values.cast<ProvenanceRecord?>().firstWhere(
+                (r) => r != null && r.originalFileHash.trim().toLowerCase() == hash,
+                orElse: () => null,
+              );
+
+              if (existingById != null) {
+                if (existingById.ownerEmail == null && record.ownerEmail != null) {
+                  await _box.put(record.id, existingById.copyWith(ownerEmail: record.ownerEmail));
+                  localModified = true;
+                }
+              } else if (existingByHash != null) {
+                if (existingByHash.ownerEmail == null && record.ownerEmail != null) {
+                  await _box.put(existingByHash.id, existingByHash.copyWith(ownerEmail: record.ownerEmail));
+                  localModified = true;
+                }
+              } else {
                 await _box.put(record.id, record);
-                localModified = true;
-              } else if (existing.ownerEmail == null && record.ownerEmail != null) {
-                await _box.put(record.id, existing.copyWith(ownerEmail: record.ownerEmail));
                 localModified = true;
               }
             }
@@ -166,13 +272,14 @@ class LedgerService extends ChangeNotifier {
 
     for (final r in localRecords) {
       final owner = r.ownerEmail?.trim().toLowerCase();
+      final hash = r.originalFileHash.trim().toLowerCase();
       if (owner == null) {
         // Tag unassigned local records with the active user email
         final updated = r.copyWith(ownerEmail: userEmail);
         await _box.put(r.id, updated);
         hasNewLocalForCloud = true;
         localModified = true;
-      } else if (owner == userEmail && !knownIds.contains(r.id)) {
+      } else if (owner == userEmail && !knownHashes.contains(hash)) {
         hasNewLocalForCloud = true;
       }
     }
@@ -187,20 +294,24 @@ class LedgerService extends ChangeNotifier {
     }
   }
 
-  /// Uploads the current user's sealed records to their Supabase account metadata.
+  /// Uploads the current user's sealed records to their Supabase account metadata without duplicates.
   Future<void> _syncLocalRecordsToCloud(String email) async {
     if (_supabase == null || !_box.isOpen) return;
     final cleanEmail = email.trim().toLowerCase();
     if (cleanEmail.isEmpty) return;
 
     try {
-      final userRecords = _box.values.where((r) {
-        if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') return false;
+      final Map<String, ProvenanceRecord> uniqueRecordsByHash = {};
+      for (final r in _box.values) {
+        if (r.id == 'sample-satellite-01' || r.filePath == 'satellite_recon_delta_09.png') continue;
         final owner = r.ownerEmail?.trim().toLowerCase();
-        return owner == null || owner == cleanEmail;
-      }).toList();
+        if (owner == null || owner == cleanEmail) {
+          final hash = r.originalFileHash.trim().toLowerCase();
+          uniqueRecordsByHash[hash] = r.copyWith(ownerEmail: cleanEmail);
+        }
+      }
 
-      final recordsJson = userRecords.map((r) => r.copyWith(ownerEmail: cleanEmail).toJson()).toList();
+      final recordsJson = uniqueRecordsByHash.values.map((r) => r.toJson()).toList();
 
       await _supabase!.auth.updateUser(
         UserAttributes(data: {'sealed_ledger_records': recordsJson}),
