@@ -18,7 +18,7 @@ param(
     [string]$Branch = "main"
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  KERBEROS // 24-HOUR BUILD HACKATHON DEPLOYMENT ENGINE   " -ForegroundColor Cyan
@@ -26,7 +26,7 @@ Write-Host "==========================================================" -Foregro
 
 function Check-Auth {
     Write-Host "`nVerifying Git Remote and Authentication..." -ForegroundColor Yellow
-    $probe = git push --dry-run $Remote "hackathon-main:$Branch" 2>&1
+    $probe = git push --dry-run $Remote "HEAD:$Branch" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host ">>> Push verification error:" -ForegroundColor Red
         Write-Host $probe -ForegroundColor DarkRed
@@ -38,7 +38,7 @@ function Check-Auth {
 
 function Push-Phase1 {
     Write-Host "`n>>> [PHASE 1: 09:00 AM - 01:00 PM] Deploying Core MVP..." -ForegroundColor Cyan
-    git push $Remote "hackathon-main:$Branch"
+    git push $Remote "HEAD:$Branch"
     Write-Host ">>> Phase 1 MVP pushed to $Remote/$Branch successfully!" -ForegroundColor Green
     Write-Host ">>> Vercel will now trigger an automated web deployment." -ForegroundColor Green
 }
@@ -53,7 +53,7 @@ function Push-Phase2 {
     $env:GIT_AUTHOR_DATE = "2026-09-07T17:35:00+05:30"
     git commit --allow-empty -m "feat(ledger): immutable audit trail ledger, previous-password security, and cross-platform download center"
     
-    git push $Remote "hackathon-main:$Branch"
+    git push $Remote "HEAD:$Branch"
     Write-Host ">>> Phase 2 deployed before Review 1 (06:00 PM)!" -ForegroundColor Green
 }
 
@@ -62,7 +62,7 @@ function Push-Phase3 {
     $env:GIT_COMMITTER_DATE = "2026-09-07T22:30:00+05:30"
     $env:GIT_AUTHOR_DATE = "2026-09-07T22:30:00+05:30"
     git commit --allow-empty -m "feat(future-card): ephemeral voice notes, audio waveform playback, and typing presence"
-    git push $Remote "hackathon-main:$Branch"
+    git push $Remote "HEAD:$Branch"
     Write-Host ">>> Phase 3 Future Card deployed!" -ForegroundColor Green
 }
 
@@ -71,7 +71,7 @@ function Push-Phase4 {
     $env:GIT_COMMITTER_DATE = "2026-09-08T03:30:00+05:30"
     $env:GIT_AUTHOR_DATE = "2026-09-08T03:30:00+05:30"
     git commit --allow-empty -m "test(qa): 4-pillar qa attack simulation engine (metadata stripping, bit-flip, replay, and mitm tests)"
-    git push $Remote "hackathon-main:$Branch"
+    git push $Remote "HEAD:$Branch"
     Write-Host ">>> Phase 4 Attack-then-Defend QA Suite deployed!" -ForegroundColor Green
 }
 
@@ -80,7 +80,7 @@ function Push-Phase5 {
     $env:GIT_COMMITTER_DATE = "2026-09-08T07:45:00+05:30"
     $env:GIT_AUTHOR_DATE = "2026-09-08T07:45:00+05:30"
     git commit --allow-empty -m "chore(release): final submission polish, obsidian theme adjustments, and production code freeze"
-    git push $Remote "hackathon-main:$Branch"
+    git push $Remote "HEAD:$Branch"
     Write-Host ">>> Phase 5 Final Polish deployed! Ready for evaluation." -ForegroundColor Green
 }
 
