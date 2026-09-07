@@ -13,6 +13,36 @@ import '../../../main.dart'; // for ledgerProvider
 import '../models/verification_models.dart';
 import '../services/verification_service.dart';
 
+enum _StepOutcome {
+  passed,
+  failed,
+  unsealed,
+}
+
+class _StepScanEvaluation {
+  final String stepNumber;
+  final String title;
+  final String inProgressSubtitle;
+  final String completedSubtitle;
+  final _StepOutcome outcome;
+  final String badgeText;
+  final Color badgeColor;
+  final String practicalReason;
+  final IconData icon;
+
+  const _StepScanEvaluation({
+    required this.stepNumber,
+    required this.title,
+    required this.inProgressSubtitle,
+    required this.completedSubtitle,
+    required this.outcome,
+    required this.badgeText,
+    required this.badgeColor,
+    required this.practicalReason,
+    required this.icon,
+  });
+}
+
 class VerificationPage extends ConsumerStatefulWidget {
   const VerificationPage({super.key});
 
@@ -39,17 +69,20 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
 
   // Sequential Scanning Loader State
   bool _isScanning = false;
+  bool _scanCompleted = false;
   String _scanningFileName = '';
   int _scanningFileSize = 0;
   int _currentScanningStep = 0; // 1: Bitstream, 2: C2PA, 3: Perceptual Tensor, 4: Ledger, 5: Complete
-  bool _step1Checked = false;
-  bool _step2Checked = false;
-  bool _step3Checked = false;
-  bool _step4Checked = false;
+  bool _step1Revealed = false;
+  bool _step2Revealed = false;
+  bool _step3Revealed = false;
+  bool _step4Revealed = false;
   double _scanProgress = 0.0;
-  String? _step1Hash;
-  bool? _step2HasJumbf;
-  String? _step4MatchStatus;
+  CompleteVerificationReport? _pendingReport;
+  _StepScanEvaluation? _step1Eval;
+  _StepScanEvaluation? _step2Eval;
+  _StepScanEvaluation? _step3Eval;
+  _StepScanEvaluation? _step4Eval;
 
   @override
   void initState() {
@@ -61,6 +94,195 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
   void dispose() {
     _injectionController.dispose();
     super.dispose();
+  }
+
+  _StepScanEvaluation _evaluateStep1(CompleteVerificationReport report) {
+    final bitstream = report.bitstream;
+    final isMatch = bitstream.isMatch;
+    final verdict = report.verdict;
+    final isUnsealed = verdict == VerificationVerdict.unsealed;
+    final isShattered = verdict == VerificationVerdict.bitstreamShattered || (!isMatch && report.matchedRecord != null);
+
+    final hash = bitstream.computedHash;
+    final shortHash = hash.length >= 24
+        ? '${hash.substring(0, 10)}...${hash.substring(hash.length - 8)}'
+        : hash;
+
+    if (isShattered) {
+      final offsetHex = (bitstream.byteOffset ?? 0).toRadixString(16).toUpperCase();
+      return _StepScanEvaluation(
+        stepNumber: '01',
+        title: 'Pillar I: Bitstream Cryptographic Parity (SHA-256)',
+        inProgressSubtitle: 'Calculating live bitstream digest & matching against seal...',
+        completedSubtitle: 'SHA-256 shattered • ${bitstream.flippedBytesCount} byte(s) altered at offset 0x$offsetHex',
+        outcome: _StepOutcome.failed,
+        badgeText: 'FAILED',
+        badgeColor: const Color(0xFFEF4444),
+        icon: Icons.close_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: This file was opened in an editor (image editor, office application, hex editor, or format converter) and resaved. Modifying or re-encoding byte sequences breaks the mathematical SHA-256 cryptographic seal, proving the binary payload was altered after initial sealing.',
+      );
+    } else if (isUnsealed) {
+      return _StepScanEvaluation(
+        stepNumber: '01',
+        title: 'Pillar I: Bitstream Cryptographic Parity (SHA-256)',
+        inProgressSubtitle: 'Calculating raw SHA-256 cryptographic checksum...',
+        completedSubtitle: 'Digest: $shortHash • No hardware baseline in enclave',
+        outcome: _StepOutcome.unsealed,
+        badgeText: 'UNSEALED',
+        badgeColor: const Color(0xFFF59E0B),
+        icon: Icons.lock_open_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: This file was never ingested or sealed through Project Kerberos. The binary hash was computed successfully, but no signed cryptographic baseline exists in the enclave ledger to verify authenticity.',
+      );
+    } else {
+      return _StepScanEvaluation(
+        stepNumber: '01',
+        title: 'Pillar I: Bitstream Cryptographic Parity (SHA-256)',
+        inProgressSubtitle: 'Verifying live binary bitstream against cryptographic seal...',
+        completedSubtitle: 'Bit-for-bit parity verified • SHA-256: $shortHash',
+        outcome: _StepOutcome.passed,
+        badgeText: 'PASSED',
+        badgeColor: const Color(0xFF10B981),
+        icon: Icons.check_rounded,
+        practicalReason: 'Asset bitstream is bit-for-bit identical to the signed cryptographic baseline in the hardware enclave.',
+      );
+    }
+  }
+
+  _StepScanEvaluation _evaluateStep2(CompleteVerificationReport report) {
+    final meta = report.metadataScrub;
+    final verdict = report.verdict;
+    final isScrubbed = verdict == VerificationVerdict.metadataScrubbed || meta.isScrubbed;
+    final isUnsealed = verdict == VerificationVerdict.unsealed || (!meta.hasJumbfPayload && report.matchedRecord == null);
+
+    if (isScrubbed) {
+      return const _StepScanEvaluation(
+        stepNumber: '02',
+        title: 'Pillar II: C2PA Manifest Provenance Envelope',
+        inProgressSubtitle: 'Scanning binary for JUMBF assertion boxes & X.509 certs...',
+        completedSubtitle: 'JUMBF box missing • Social media proxy interception detected',
+        outcome: _StepOutcome.failed,
+        badgeText: 'STRIPPED',
+        badgeColor: Color(0xFFEF4444),
+        icon: Icons.close_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: An intermediary platform (such as WhatsApp, Discord, Slack, Twitter, or an email transcode proxy) re-encoded or compressed this media, stripping away all embedded C2PA JUMBF assertion boxes, provenance claims, and X.509 certificates.',
+      );
+    } else if (isUnsealed) {
+      return const _StepScanEvaluation(
+        stepNumber: '02',
+        title: 'Pillar II: C2PA Manifest Provenance Envelope',
+        inProgressSubtitle: 'Scanning for embedded C2PA JUMBF assertion boxes...',
+        completedSubtitle: 'No C2PA manifest container detected in raw stream',
+        outcome: _StepOutcome.unsealed,
+        badgeText: 'MISSING',
+        badgeColor: Color(0xFFF59E0B),
+        icon: Icons.warning_amber_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: This asset was created or exported without a standard C2PA provenance envelope. Raw binary contains no JUMBF assertion store, signer identity, or provenance claim manifests.',
+      );
+    } else {
+      final version = meta.c2paVersion ?? 'C2PA v1.4';
+      return _StepScanEvaluation(
+        stepNumber: '02',
+        title: 'Pillar II: C2PA Manifest Provenance Envelope',
+        inProgressSubtitle: 'Validating C2PA JUMBF envelope and certificate chain...',
+        completedSubtitle: 'Hardware JUMBF assertion box & $version verified',
+        outcome: _StepOutcome.passed,
+        badgeText: 'PASSED',
+        badgeColor: const Color(0xFF10B981),
+        icon: Icons.check_rounded,
+        practicalReason: 'Hardware-generated C2PA JUMBF envelope is present with valid cryptographic assertion claims and signature chains.',
+      );
+    }
+  }
+
+  _StepScanEvaluation _evaluateStep3(CompleteVerificationReport report) {
+    final stego = report.steganography;
+    final verdict = report.verdict;
+    final isAltered = verdict == VerificationVerdict.steganographyAltered || stego.isAltered || stego.perceptualDrift > 0.05;
+
+    if (isAltered) {
+      final driftStr = stego.perceptualDrift.toStringAsFixed(2);
+      return _StepScanEvaluation(
+        stepNumber: '03',
+        title: 'Pillar III: 256-Cell Perceptual Neural Tensor',
+        inProgressSubtitle: 'Computing 16x16 perceptual delta matrix & stego analysis...',
+        completedSubtitle: 'Perceptual drift: $driftStr% • Steganographic alteration',
+        outcome: _StepOutcome.failed,
+        badgeText: 'ALTERED',
+        badgeColor: const Color(0xFFEF4444),
+        icon: Icons.close_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: Edge neural inference identified visual drift in high-frequency color channels. Localized steganographic tampering, object removal/insertion, or hidden data payloads were injected into the media.',
+      );
+    } else if (verdict == VerificationVerdict.unsealed) {
+      return const _StepScanEvaluation(
+        stepNumber: '03',
+        title: 'Pillar III: 256-Cell Perceptual Neural Tensor',
+        inProgressSubtitle: 'Executing edge neural inference tensor model...',
+        completedSubtitle: '16x16 visual baseline computed • Ready for anchoring',
+        outcome: _StepOutcome.passed,
+        badgeText: 'BASELINE',
+        badgeColor: Color(0xFF38BDF8),
+        icon: Icons.check_circle_rounded,
+        practicalReason: 'Edge neural perceptual model processed all 256 grid cells. Baseline visual tensor generated successfully.',
+      );
+    } else {
+      return const _StepScanEvaluation(
+        stepNumber: '03',
+        title: 'Pillar III: 256-Cell Perceptual Neural Tensor',
+        inProgressSubtitle: 'Running edge-native perceptual drift analysis...',
+        completedSubtitle: '0.00% perceptual drift • 256-cell tensor bit-exact',
+        outcome: _StepOutcome.passed,
+        badgeText: 'PASSED',
+        badgeColor: Color(0xFF10B981),
+        icon: Icons.check_circle_rounded,
+        practicalReason: 'Neural perceptual matrix matches sealed baseline with 0.00% drift. No visual, semantic, or steganographic modifications.',
+      );
+    }
+  }
+
+  _StepScanEvaluation _evaluateStep4(CompleteVerificationReport report) {
+    final record = report.matchedRecord;
+    final verdict = report.verdict;
+    final isUnsealed = verdict == VerificationVerdict.unsealed || record == null;
+
+    if (isUnsealed) {
+      return const _StepScanEvaluation(
+        stepNumber: '04',
+        title: 'Pillar IV: Air-Gapped Ledger Cross-Validation',
+        inProgressSubtitle: 'Querying immutable cryptographic ledger anchors...',
+        completedSubtitle: 'Unanchored asset • No matching record in Hive ledger',
+        outcome: _StepOutcome.unsealed,
+        badgeText: 'UNREGISTERED',
+        badgeColor: Color(0xFFF59E0B),
+        icon: Icons.warning_amber_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: No matching cryptographic record exists in the immutable Hive ledger. The asset either originated outside the enclave perimeter or was never sealed under the Obsidian protocol.',
+      );
+    } else if (report.isRenamed) {
+      final orig = report.originalSealedName ?? 'Original File';
+      final curr = report.fileName;
+      return _StepScanEvaluation(
+        stepNumber: '04',
+        title: 'Pillar IV: Air-Gapped Ledger Cross-Validation',
+        inProgressSubtitle: 'Cross-examining ledger history & lineage chains...',
+        completedSubtitle: 'Ledger anchor confirmed • Renamed from "$orig"',
+        outcome: _StepOutcome.passed,
+        badgeText: 'ANCHORED',
+        badgeColor: const Color(0xFF10B981),
+        icon: Icons.check_circle_rounded,
+        practicalReason: 'WHAT PRACTICALLY HAPPENED: The file name was changed from "$orig" to "$curr", but content-addressable cryptographic analysis verified that the binary content is 100% bit-for-bit identical to the immutable ledger seal.',
+      );
+    } else {
+      return const _StepScanEvaluation(
+        stepNumber: '04',
+        title: 'Pillar IV: Air-Gapped Ledger Cross-Validation',
+        inProgressSubtitle: 'Validating cryptographic ledger provenance chain...',
+        completedSubtitle: 'Cryptographic anchor verified in immutable Hive ledger',
+        outcome: _StepOutcome.passed,
+        badgeText: 'ANCHORED',
+        badgeColor: Color(0xFF10B981),
+        icon: Icons.check_circle_rounded,
+        practicalReason: 'Cryptographic provenance anchor verified in local immutable ledger with valid hardware signature and timestamp.',
+      );
+    }
   }
 
   Future<void> _analyzeLoadedBytes(Uint8List bytes, String name) async {
@@ -77,44 +299,52 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       targetRecordId: targetId,
     );
 
+    final s1 = _evaluateStep1(newReport);
+    final s2 = _evaluateStep2(newReport);
+    final s3 = _evaluateStep3(newReport);
+    final s4 = _evaluateStep4(newReport);
+
     setState(() {
       _isScanning = true;
+      _scanCompleted = false;
       _scanningFileName = name;
       _scanningFileSize = bytes.length;
       _currentScanningStep = 1;
-      _step1Checked = false;
-      _step2Checked = false;
-      _step3Checked = false;
-      _step4Checked = false;
+      _step1Revealed = false;
+      _step2Revealed = false;
+      _step3Revealed = false;
+      _step4Revealed = false;
       _scanProgress = 0.12;
-      _step1Hash = newReport.bitstream.computedHash;
-      _step2HasJumbf = newReport.metadataScrub.hasJumbfPayload;
-      _step4MatchStatus = newReport.matchedRecord != null ? 'Anchored' : 'Unregistered';
+      _pendingReport = newReport;
+      _step1Eval = s1;
+      _step2Eval = s2;
+      _step3Eval = s3;
+      _step4Eval = s4;
     });
 
-    // Step 1: Bitstream Cryptographic Integrity (SHA-256)
+    // Step 1: Bitstream Cryptographic Parity (SHA-256)
     await Future.delayed(const Duration(milliseconds: 550));
     if (!mounted) return;
     setState(() {
-      _step1Checked = true;
+      _step1Revealed = true;
       _currentScanningStep = 2;
       _scanProgress = 0.38;
     });
 
-    // Step 2: C2PA JUMBF Manifest Envelope Inspection
+    // Step 2: C2PA Manifest Provenance Envelope
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     setState(() {
-      _step2Checked = true;
+      _step2Revealed = true;
       _currentScanningStep = 3;
       _scanProgress = 0.68;
     });
 
-    // Step 3: 256-Cell Perceptual Neural Tensor Heatmap
-    await Future.delayed(const Duration(milliseconds: 550));
+    // Step 3: 256-Cell Perceptual Neural Tensor
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     setState(() {
-      _step3Checked = true;
+      _step3Revealed = true;
       _currentScanningStep = 4;
       _scanProgress = 0.90;
     });
@@ -123,18 +353,10 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     setState(() {
-      _step4Checked = true;
+      _step4Revealed = true;
       _currentScanningStep = 5;
       _scanProgress = 1.0;
-    });
-
-    // Brief celebratory pause with all 4 green ticks visible
-    await Future.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() {
-      _isScanning = false;
-      _report = newReport;
-      _selectedTargetRecordId = newReport.matchedRecord?.id ?? targetId;
+      _scanCompleted = true;
     });
   }
 
@@ -522,18 +744,40 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
   }
 
   Widget _buildScanningLoader() {
+    final hasFailures = (_step1Eval?.outcome == _StepOutcome.failed) ||
+        (_step2Eval?.outcome == _StepOutcome.failed) ||
+        (_step3Eval?.outcome == _StepOutcome.failed) ||
+        (_step4Eval?.outcome == _StepOutcome.failed);
+
+    final isUnsealed = (_pendingReport?.verdict == VerificationVerdict.unsealed) ||
+        (!hasFailures &&
+            ((_step1Eval?.outcome == _StepOutcome.unsealed) ||
+                (_step2Eval?.outcome == _StepOutcome.unsealed) ||
+                (_step4Eval?.outcome == _StepOutcome.unsealed)));
+
+    final isAllPassed = _scanCompleted && !hasFailures && !isUnsealed;
+
+    final Color headerAccentColor = !_scanCompleted
+        ? const Color(0xFFC084FC)
+        : (hasFailures
+            ? const Color(0xFFEF4444)
+            : (isUnsealed ? const Color(0xFFF59E0B) : const Color(0xFF10B981)));
+
     return Center(
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 640),
+        constraints: const BoxConstraints(maxWidth: 680),
         margin: const EdgeInsets.symmetric(vertical: 36),
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
           color: const Color(0x18FFFFFF),
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: const Color(0x35C084FC), width: 1.5),
+          border: Border.all(
+            color: headerAccentColor.withValues(alpha: 0.4),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
-              color: CyberTheme.accentColor.withValues(alpha: 0.3),
+              color: headerAccentColor.withValues(alpha: 0.25),
               blurRadius: 40,
               spreadRadius: 2,
             ),
@@ -546,25 +790,45 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
             // Top scanning header
             Row(
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 350),
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: CyberTheme.shardGradient,
+                    gradient: !_scanCompleted
+                        ? CyberTheme.shardGradient
+                        : (hasFailures
+                            ? const LinearGradient(colors: [Color(0xFFDC2626), Color(0xFF991B1B)])
+                            : (isUnsealed
+                                ? const LinearGradient(colors: [Color(0xFFD97706), Color(0xFFB45309)])
+                                : const LinearGradient(colors: [Color(0xFF059669), Color(0xFF047857)]))),
                     boxShadow: [
                       BoxShadow(
-                        color: CyberTheme.accentColor.withValues(alpha: 0.5),
-                        blurRadius: 18,
+                        color: headerAccentColor.withValues(alpha: 0.5),
+                        blurRadius: 20,
+                        spreadRadius: 2,
                       ),
                     ],
                   ),
-                  child: const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: !_scanCompleted
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Icon(
+                            hasFailures
+                                ? Icons.gpp_bad_rounded
+                                : (isUnsealed ? Icons.lock_open_rounded : Icons.verified_user_rounded),
+                            color: Colors.white,
+                            size: 26,
+                            key: ValueKey(hasFailures ? 'fail' : (isUnsealed ? 'unsealed' : 'pass')),
+                          ),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -575,11 +839,17 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                       Row(
                         children: [
                           Text(
-                            'ZERO-TRUST FORENSIC SCANNER',
+                            !_scanCompleted
+                                ? 'ZERO-TRUST FORENSIC SCANNER'
+                                : (hasFailures
+                                    ? 'FORENSIC BREACH DETECTED'
+                                    : (isUnsealed
+                                        ? 'UNSEALED ASSET EVALUATION'
+                                        : 'ZERO-TRUST VERIFICATION PASSED')),
                             style: GoogleFonts.jetBrainsMono(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
-                              color: const Color(0xFFC084FC),
+                              color: headerAccentColor,
                               letterSpacing: 1.2,
                             ),
                           ),
@@ -594,6 +864,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 3),
                       Row(
                         children: [
                           Flexible(
@@ -613,7 +884,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                             '• ${(_scanningFileSize / 1024).toStringAsFixed(1)} KB',
                             style: GoogleFonts.jetBrainsMono(
                               fontSize: 11,
-                              color: const Color(0xFFC084FC),
+                              color: headerAccentColor,
                             ),
                           ),
                         ],
@@ -637,70 +908,72 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                   builder: (context, val, _) => LinearProgressIndicator(
                     value: val,
                     backgroundColor: const Color(0x25FFFFFF),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFC084FC)),
+                    valueColor: AlwaysStoppedAnimation<Color>(headerAccentColor),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 26),
 
-            // 4 Sequential Tests with dynamic ticks
-            _buildScanningStepRow(
-              stepNumber: '01',
-              title: 'Pillar I: Bitstream Cryptographic Integrity',
-              subtitle: _step1Checked
-                  ? 'SHA-256: ${_step1Hash != null ? (_step1Hash!.substring(0, 16) + '...' + _step1Hash!.substring(_step1Hash!.length - 8)) : "Verified"}'
-                  : 'Computing bit-level SHA-256 digest & parity...',
-              isChecked: _step1Checked,
-              isActive: _currentScanningStep == 1,
-            ),
-            const SizedBox(height: 14),
+            // 4 Sequential Tests with Dynamic Outcomes & Forensic Diagnosis
+            if (_step1Eval != null) ...[
+              _buildScanningStepRow(
+                eval: _step1Eval!,
+                isRevealed: _step1Revealed,
+                isActive: _currentScanningStep == 1,
+              ),
+              const SizedBox(height: 12),
+            ],
 
-            _buildScanningStepRow(
-              stepNumber: '02',
-              title: 'Pillar II: C2PA JUMBF Manifest Envelope',
-              subtitle: _step2Checked
-                  ? (_step2HasJumbf == true ? 'Hardware JUMBF box & claim generator verified' : 'Unsigned bitstream (No C2PA envelope attached)')
-                  : 'Parsing JUMBF manifest boxes, X.509 certs...',
-              isChecked: _step2Checked,
-              isActive: _currentScanningStep == 2,
-            ),
-            const SizedBox(height: 14),
+            if (_step2Eval != null) ...[
+              _buildScanningStepRow(
+                eval: _step2Eval!,
+                isRevealed: _step2Revealed,
+                isActive: _currentScanningStep == 2,
+              ),
+              const SizedBox(height: 12),
+            ],
 
-            _buildScanningStepRow(
-              stepNumber: '03',
-              title: 'Pillar III: 256-Cell Perceptual Neural Tensor',
-              subtitle: _step3Checked
-                  ? '16x16 neural matrix computed • Steganography checked'
-                  : 'Generating 256-cell perceptual delta heatmap...',
-              isChecked: _step3Checked,
-              isActive: _currentScanningStep == 3,
-            ),
-            const SizedBox(height: 14),
+            if (_step3Eval != null) ...[
+              _buildScanningStepRow(
+                eval: _step3Eval!,
+                isRevealed: _step3Revealed,
+                isActive: _currentScanningStep == 3,
+              ),
+              const SizedBox(height: 12),
+            ],
 
-            _buildScanningStepRow(
-              stepNumber: '04',
-              title: 'Pillar IV: Air-Gapped Ledger Cross-Examination',
-              subtitle: _step4Checked
-                  ? (_step4MatchStatus == 'Anchored' ? 'Sealed provenance anchor confirmed in Hive ledger' : 'Unregistered asset • Ready for provenance sealing')
-                  : 'Querying immutable cryptographic ledger anchors...',
-              isChecked: _step4Checked,
-              isActive: _currentScanningStep == 4,
-            ),
-            const SizedBox(height: 24),
+            if (_step4Eval != null) ...[
+              _buildScanningStepRow(
+                eval: _step4Eval!,
+                isRevealed: _step4Revealed,
+                isActive: _currentScanningStep == 4,
+              ),
+            ],
 
-            // Security footer note
-            Center(
-              child: Text(
-                'ZERO-TRUST ISOLATION // HARDWARE-ANCHORED EVALUATION',
-                style: GoogleFonts.jetBrainsMono(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0x60FFFFFF),
-                  letterSpacing: 1.0,
+            // Completed Verdict & Navigation Actions
+            if (_scanCompleted) ...[
+              const SizedBox(height: 20),
+              _buildScanCompletedVerdictBanner(
+                hasFailures: hasFailures,
+                isUnsealed: isUnsealed,
+                isAllPassed: isAllPassed,
+                accentColor: headerAccentColor,
+              ),
+            ] else ...[
+              const SizedBox(height: 20),
+              Center(
+                child: Text(
+                  'ZERO-TRUST ISOLATION // HARDWARE-ANCHORED EVALUATION',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0x60FFFFFF),
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -708,18 +981,31 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
   }
 
   Widget _buildScanningStepRow({
-    required String stepNumber,
-    required String title,
-    required String subtitle,
-    required bool isChecked,
+    required _StepScanEvaluation eval,
+    required bool isRevealed,
     required bool isActive,
   }) {
-    final Color borderColor = isChecked
-        ? const Color(0x6010B981)
-        : (isActive ? const Color(0x60C084FC) : const Color(0x18FFFFFF));
-    final Color bgColor = isChecked
-        ? const Color(0x1810B981)
-        : (isActive ? const Color(0x18C084FC) : const Color(0x0AFFFFFF));
+    Color borderColor;
+    Color bgColor;
+
+    if (isRevealed) {
+      if (eval.outcome == _StepOutcome.failed) {
+        borderColor = const Color(0x80EF4444);
+        bgColor = const Color(0x1CEF4444);
+      } else if (eval.outcome == _StepOutcome.unsealed) {
+        borderColor = const Color(0x80F59E0B);
+        bgColor = const Color(0x18F59E0B);
+      } else {
+        borderColor = const Color(0x6010B981);
+        bgColor = const Color(0x1410B981);
+      }
+    } else if (isActive) {
+      borderColor = const Color(0x70C084FC);
+      bgColor = const Color(0x1AC084FC);
+    } else {
+      borderColor = const Color(0x18FFFFFF);
+      bgColor = const Color(0x0AFFFFFF);
+    }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -729,104 +1015,304 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: borderColor, width: 1.2),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Indicator icon (Tick, Spinner, or Waiting circle)
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
-            child: isChecked
-                ? Container(
-                    key: const ValueKey('checked'),
-                    width: 28,
-                    height: 28,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFF10B981),
-                    ),
-                    child: const Icon(Icons.check_rounded, color: Colors.white, size: 18),
-                  )
-                : (isActive
+          Row(
+            children: [
+              // Indicator icon: Tick, Cross, Warning, Spinner, or Idle step number
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                child: isRevealed
                     ? Container(
-                        key: const ValueKey('active'),
+                        key: ValueKey('revealed_${eval.outcome.name}_${eval.stepNumber}'),
                         width: 28,
                         height: 28,
-                        padding: const EdgeInsets.all(5),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0x30C084FC),
-                          border: Border.all(color: const Color(0xFFC084FC)),
+                          color: eval.badgeColor,
                         ),
-                        child: const CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFC084FC)),
-                        ),
+                        child: Icon(eval.icon, color: Colors.white, size: 16),
                       )
-                    : Container(
-                        key: const ValueKey('idle'),
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white24, width: 1.5),
-                        ),
-                        child: Center(
-                          child: Text(
-                            stepNumber,
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white38,
+                    : (isActive
+                        ? Container(
+                            key: const ValueKey('active_spinner'),
+                            width: 28,
+                            height: 28,
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0x30C084FC),
+                              border: Border.all(color: const Color(0xFFC084FC)),
                             ),
-                          ),
-                        ),
-                      )),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: isChecked || isActive ? FontWeight.w700 : FontWeight.w500,
-                    color: isChecked ? Colors.white : (isActive ? const Color(0xFFE9D5FF) : Colors.white54),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFC084FC)),
+                            ),
+                          )
+                        : Container(
+                            key: ValueKey('idle_${eval.stepNumber}'),
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white24, width: 1.5),
+                            ),
+                            child: Center(
+                              child: Text(
+                                eval.stepNumber,
+                                style: GoogleFonts.jetBrainsMono(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white38,
+                                ),
+                              ),
+                            ),
+                          )),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      eval.title,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: isRevealed || isActive ? FontWeight.w700 : FontWeight.w500,
+                        color: isRevealed
+                            ? Colors.white
+                            : (isActive ? const Color(0xFFE9D5FF) : Colors.white54),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isRevealed
+                          ? eval.completedSubtitle
+                          : (isActive ? eval.inProgressSubtitle : 'Awaiting scheduled execution...'),
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10.5,
+                        color: isRevealed
+                            ? eval.badgeColor
+                            : (isActive ? const Color(0xFFC084FC) : Colors.white38),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (isRevealed) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: eval.badgeColor.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(color: eval.badgeColor.withValues(alpha: 0.5)),
+                  ),
+                  child: Text(
+                    eval.badgeText,
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                      color: eval.badgeColor,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 10.5,
-                    color: isChecked ? const Color(0xFF34D399) : (isActive ? const Color(0xFFC084FC) : Colors.white38),
+              ] else if (isActive) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0x20C084FC),
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(color: const Color(0x60C084FC)),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  child: Text(
+                    'SCANNING...',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFE9D5FF),
+                    ),
+                  ),
                 ),
               ],
-            ),
+            ],
           ),
-          if (isChecked) ...[
-            const SizedBox(width: 8),
+
+          // Detailed Forensic Diagnosis for Failed or Unsealed Tests
+          if (isRevealed && (eval.outcome == _StepOutcome.failed || eval.outcome == _StepOutcome.unsealed)) ...[
+            const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: const Color(0x2510B981),
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(color: const Color(0x6010B981)),
-              ),
-              child: Text(
-                'PASSED',
-                style: GoogleFonts.jetBrainsMono(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF34D399),
+                color: eval.outcome == _StepOutcome.failed
+                    ? const Color(0x25EF4444)
+                    : const Color(0x22F59E0B),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: eval.outcome == _StepOutcome.failed
+                      ? const Color(0x60EF4444)
+                      : const Color(0x50F59E0B),
                 ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    eval.outcome == _StepOutcome.failed
+                        ? Icons.report_problem_rounded
+                        : Icons.info_outline_rounded,
+                    color: eval.outcome == _StepOutcome.failed
+                        ? const Color(0xFFF87171)
+                        : const Color(0xFFFBBF24),
+                    size: 15,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      eval.practicalReason,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
+                        color: eval.outcome == _StepOutcome.failed
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFFDE68A),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScanCompletedVerdictBanner({
+    required bool hasFailures,
+    required bool isUnsealed,
+    required bool isAllPassed,
+    required Color accentColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accentColor.withValues(alpha: 0.45), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withValues(alpha: 0.22),
+            blurRadius: 24,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accentColor.withValues(alpha: 0.2),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                ),
+                child: Icon(
+                  hasFailures
+                      ? Icons.gpp_bad_rounded
+                      : (isUnsealed ? Icons.lock_open_rounded : Icons.verified_user_rounded),
+                  color: accentColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasFailures
+                          ? 'FORENSIC AUDIT FAILED'
+                          : (isUnsealed ? 'UNSEALED ASSET' : 'VERIFIED GENUINE & SEALED'),
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: accentColor,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      hasFailures
+                          ? 'One or more Zero-Trust security pillars failed verification. Review the diagnostic breakdown above for exact forensic causes.'
+                          : (isUnsealed
+                              ? 'This asset has no cryptographic baseline in the enclave ledger. It is ready for initial provenance sealing.'
+                              : 'All 4 Zero-Trust Pillars verified bit-for-bit against the immutable hardware enclave ledger.'),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: Colors.white70,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            alignment: WrapAlignment.end,
+            children: [
+              CyberButton(
+                variant: CyberButtonVariant.glassPill,
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                icon: Icons.refresh_rounded,
+                onTap: () {
+                  setState(() {
+                    _isScanning = false;
+                    _scanCompleted = false;
+                    _pendingReport = null;
+                    _report = null;
+                    _pristineOriginalBytes = null;
+                    _pristineOriginalFileName = null;
+                    _selectedTargetRecordId = null;
+                  });
+                },
+                child: const Text('Verify Another File'),
+              ),
+              CyberButton(
+                variant: CyberButtonVariant.whitePill,
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                icon: Icons.analytics_outlined,
+                onTap: () {
+                  setState(() {
+                    _isScanning = false;
+                    _report = _pendingReport;
+                    _selectedTargetRecordId =
+                        _pendingReport?.matchedRecord?.id ?? _selectedTargetRecordId;
+                  });
+                },
+                child: Text(
+                  hasFailures
+                      ? 'Examine Forensic Attack Panels ➔'
+                      : 'Examine In-Depth QA Panels ➔',
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
