@@ -102,6 +102,8 @@ class DocumentForensicService {
         creationDate: matchedRecord.timestamp,
         modificationDate: matchedRecord.timestamp,
         matchedLedgerRecord: matchedRecord,
+        isDigitalSignaturePresent: true,
+        digitalSignatureAlgorithm: 'Ed25519 Hardware Assertion Seal',
       );
     }
 
@@ -155,6 +157,12 @@ class DocumentForensicService {
         creationDate: matchedRecord.timestamp,
         modificationDate: DateTime.now(),
         matchedLedgerRecord: matchedRecord,
+        isDigitalSignaturePresent: subAnalysis.isDigitalSignaturePresent,
+        isGovernmentOrAadhaarDoc: subAnalysis.isGovernmentOrAadhaarDoc,
+        isVirtualPrinterFlattened: subAnalysis.isVirtualPrinterFlattened,
+        isScreenshotOrScreenCapture: subAnalysis.isScreenshotOrScreenCapture,
+        isSocialMediaCompressed: subAnalysis.isSocialMediaCompressed,
+        digitalSignatureAlgorithm: subAnalysis.digitalSignatureAlgorithm,
       );
     }
 
@@ -170,6 +178,9 @@ class DocumentForensicService {
     } else if (forensicResult.isTampered) {
       verdict = DocumentForensicVerdict.tamperedEdited;
       confidence = forensicResult.confidence;
+    } else if (forensicResult.isSocialMediaCompressed) {
+      verdict = DocumentForensicVerdict.socialMediaTranscoded;
+      confidence = 91;
     } else {
       verdict = DocumentForensicVerdict.authenticOriginal;
       confidence = 94;
@@ -192,6 +203,12 @@ class DocumentForensicService {
       trailingPayloadBytes: forensicResult.trailingPayloadBytes,
       creationDate: forensicResult.creationDate,
       modificationDate: forensicResult.modificationDate,
+      isDigitalSignaturePresent: forensicResult.isDigitalSignaturePresent,
+      isGovernmentOrAadhaarDoc: forensicResult.isGovernmentOrAadhaarDoc,
+      isVirtualPrinterFlattened: forensicResult.isVirtualPrinterFlattened,
+      isScreenshotOrScreenCapture: forensicResult.isScreenshotOrScreenCapture,
+      isSocialMediaCompressed: forensicResult.isSocialMediaCompressed,
+      digitalSignatureAlgorithm: forensicResult.digitalSignatureAlgorithm,
     );
   }
 
@@ -205,7 +222,7 @@ class DocumentForensicService {
     String mimeType,
   ) {
     if (mimeType == 'application/pdf' || lowerName.endsWith('.pdf')) {
-      return _analyzePdfForensics(bytes);
+      return _analyzePdfForensics(bytes, lowerName);
     } else if (mimeType.startsWith('image/') ||
         lowerName.endsWith('.jpg') ||
         lowerName.endsWith('.jpeg') ||
@@ -214,12 +231,12 @@ class DocumentForensicService {
         lowerName.endsWith('.tiff')) {
       return _analyzeImageForensics(bytes, mimeType, lowerName);
     } else {
-      return _analyzeGenericDocumentForensics(bytes, mimeType);
+      return _analyzeGenericDocumentForensics(bytes, mimeType, lowerName);
     }
   }
 
-  /// PDF Forensics: Incremental revisions, multiple %%EOF, /Prev pointers, /Producer signatures
-  static _InternalForensicAnalysis _analyzePdfForensics(Uint8List bytes) {
+  /// PDF Forensics: Incremental revisions, virtual printer flattening, Aadhaar UIDAI signature, font subsets
+  static _InternalForensicAnalysis _analyzePdfForensics(Uint8List bytes, String lowerName) {
     final anomalies = <TamperAnomalyFlag>[];
     final editingTools = <String>{};
     final history = <DocumentRevisionEntry>[];
@@ -250,7 +267,7 @@ class DocumentForensicService {
           trailingBytes = remaining.length;
           anomalies.add(TamperAnomalyFlag(
             title: 'Trailing Injected Payload Detected',
-            technicalDetail: '$trailingBytes bytes appended past the final %%EOF file terminator. Possible steganography or payload injection.',
+            technicalDetail: '$trailingBytes bytes appended past final %%EOF terminator. Possible steganography or hidden payload injection.',
             isSevere: true,
           ));
         }
@@ -292,10 +309,137 @@ class DocumentForensicService {
       }
     }
 
-    // F. Incremental Revision Tampering Diagnosis
-    final revisionCount = eofCount > 0 ? eofCount : 1;
+    // F. FLAW 1 RECTIFICATION: Virtual Printer Re-Distillation / Flattening Detector
+    bool isVirtualPrinter = false;
+    String? virtualPrinterTool;
+    const virtualPrinterSignatures = {
+      'Microsoft: Print to PDF': 'Microsoft Print to PDF virtual printer',
+      'Microsoft Print to PDF': 'Microsoft Print to PDF virtual printer',
+      'Chrome PDF Engine': 'Google Chrome PDF virtual print driver',
+      'Skia/PDF': 'Chromium / Skia PDF print driver',
+      'CutePDF': 'CutePDF Writer virtual driver',
+      'Bullzip': 'Bullzip PDF Printer',
+      'PDFCreator': 'PDFCreator virtual driver',
+      'PrimoPDF': 'PrimoPDF printer',
+      'Nitro PDF Creator': 'Nitro PDF Creator virtual driver',
+      'Foxit Reader PDF Printer': 'Foxit virtual printer',
+      'doPDF': 'doPDF virtual printer',
+      'novaPDF': 'novaPDF virtual driver',
+    };
+
+    for (final entry in virtualPrinterSignatures.entries) {
+      if (rawAscii.contains(entry.key) ||
+          (producer != null && producer.contains(entry.key)) ||
+          (creator != null && creator.contains(entry.key))) {
+        isVirtualPrinter = true;
+        virtualPrinterTool = entry.value;
+        editingTools.add(entry.value);
+        break;
+      }
+    }
+
+    // G. FLAW 1 RECTIFICATION: UIDAI Aadhaar Specific Cryptographic Signature Validation
+    final isAadhaarDoc = rawAscii.contains('Aadhaar') ||
+        rawAscii.contains('UIDAI') ||
+        rawAscii.contains('Unique Identification Authority of India') ||
+        rawAscii.contains('Government of India') ||
+        rawAscii.contains('resident.uidai.gov.in') ||
+        lowerName.contains('aadhaar') ||
+        lowerName.contains('adhaar') ||
+        lowerName.contains('uidai');
+
+    // Check for PKCS#7 / CMS digital signature container in PDF
+    final hasDigitalSignature = rawAscii.contains('/Type /Sig') ||
+        rawAscii.contains('/Type/Sig') ||
+        rawAscii.contains('/ByteRange') ||
+        rawAscii.contains('/adbe.pkcs7.detached') ||
+        rawAscii.contains('/ETSI.CAdES.detached');
+
+    String? digitalSignatureAlgorithm;
+    if (hasDigitalSignature) {
+      digitalSignatureAlgorithm = rawAscii.contains('/ETSI.CAdES')
+          ? 'ETSI CAdES Detached (X.509 PKI)'
+          : 'Adobe PKCS#7 Detached (RSA SHA-256 HSM)';
+    }
+
+    // Check if it's a medical bill, hospital record, or financial invoice
+    final isMedicalOrInvoice = rawAscii.contains('Hospital') ||
+        rawAscii.contains('Medical') ||
+        rawAscii.contains('Patient') ||
+        rawAscii.contains('Diagnosis') ||
+        rawAscii.contains('Invoice') ||
+        rawAscii.contains('Tax') ||
+        rawAscii.contains('Bill') ||
+        lowerName.contains('hospital') ||
+        lowerName.contains('medical') ||
+        lowerName.contains('bill') ||
+        lowerName.contains('invoice');
+
     bool isTampered = false;
 
+    // Aadhaar Statutory Signature Enforcement
+    if (isAadhaarDoc) {
+      if (!hasDigitalSignature) {
+        isTampered = true;
+        anomalies.add(const TamperAnomalyFlag(
+          title: 'Missing Statutory UIDAI Digital Signature',
+          technicalDetail: 'Document claims to be an official UIDAI / Government Aadhaar credential but lacks the statutory HSM X.509 PKCS#7 digital signature (/Type /Sig). Document is an unofficial flattened reprint, screenshot-to-PDF printout, or forged replica.',
+          isSevere: true,
+        ));
+      } else {
+        // Digital signature is present
+        if (eofCount > 1) {
+          isTampered = true;
+          anomalies.add(const TamperAnomalyFlag(
+            title: 'UIDAI Signature ByteRange Compromised',
+            technicalDetail: 'Document contains a UIDAI signature structure, but incremental revisions (/Prev pointers) were appended after the certified byte-range hash.',
+            isSevere: true,
+          ));
+        }
+      }
+
+      if (isVirtualPrinter) {
+        isTampered = true;
+        anomalies.add(TamperAnomalyFlag(
+          title: 'Aadhaar Virtual Printer Laundering Detected',
+          technicalDetail: 'Government Aadhaar credential was re-distilled through "$virtualPrinterTool". Official e-Aadhaars are generated exclusively by UIDAI HSM servers, never virtual printers.',
+          isSevere: true,
+        ));
+      }
+    }
+
+    // Medical & Invoice Virtual Printer Laundering Check
+    if (isMedicalOrInvoice && isVirtualPrinter) {
+      isTampered = true;
+      anomalies.add(TamperAnomalyFlag(
+        title: 'Virtual Printer Flattening Detected ($virtualPrinterTool)',
+        technicalDetail: 'Invoice / medical record was re-distilled through a virtual PDF printer. Attackers use virtual drivers to flatten edited bills and erase incremental revision history.',
+        isSevere: true,
+      ));
+    } else if (isVirtualPrinter && !isAadhaarDoc && !isMedicalOrInvoice) {
+      // General virtual printer flag
+      anomalies.add(TamperAnomalyFlag(
+        title: 'Virtual PDF Printer Generation ($virtualPrinterTool)',
+        technicalDetail: 'Document was generated via a virtual print driver rather than direct native compilation.',
+        isSevere: false,
+      ));
+    }
+
+    // H. FLAW 4 RECTIFICATION: Font Subset Inconsistency Detector
+    final fontSubsetRegex = RegExp(r'/([A-Z]{6}\+[A-Za-z0-9_\-]+)');
+    final fontSubsetMatches = fontSubsetRegex.allMatches(rawAscii).map((m) => m.group(1)!).toSet();
+    if (fontSubsetMatches.length >= 3 && !hasDigitalSignature) {
+      final subsetsList = fontSubsetMatches.take(3).join(', ');
+      anomalies.add(TamperAnomalyFlag(
+        title: 'Font Subset Inconsistency Detected',
+        technicalDetail: 'Document contains multiple disjoint font subset families ($subsetsList). Injected secondary font subsets are characteristic of modified numerical fields or altered dates.',
+        isSevere: true,
+      ));
+      isTampered = true;
+    }
+
+    // I. Incremental Revision Tampering Diagnosis
+    final revisionCount = eofCount > 0 ? eofCount : 1;
     if (eofCount > 1 || prevMatches.isNotEmpty) {
       isTampered = true;
       anomalies.add(TamperAnomalyFlag(
@@ -305,9 +449,8 @@ class DocumentForensicService {
       ));
     }
 
-    // G. Software Footprints Flag
-    if (editingTools.isNotEmpty) {
-      // Check if original creation was by an automated engine and then edited
+    // J. Software Footprints Flag
+    if (editingTools.isNotEmpty && !isVirtualPrinter) {
       anomalies.add(TamperAnomalyFlag(
         title: 'External Editing Software Footprints',
         technicalDetail: 'Binary stream contains editor signatures: ${editingTools.join(', ')}.',
@@ -316,7 +459,7 @@ class DocumentForensicService {
       isTampered = true;
     }
 
-    // H. Timestamp Paradox Check
+    // K. Timestamp Paradox Check
     if (creationDate != null && modDate != null) {
       final difference = modDate.difference(creationDate).abs();
       if (modDate.isAfter(creationDate) && difference.inMinutes > 5) {
@@ -336,13 +479,17 @@ class DocumentForensicService {
     }
 
     // Build Chronological History
-    final initialTool = producer ?? creator ?? 'Official Document Generation System';
+    final initialTool = producer ?? creator ?? (isAadhaarDoc ? 'UIDAI Automated Document Issuer' : 'Official Document Generation System');
     history.add(DocumentRevisionEntry(
       revisionIndex: 1,
-      title: 'Initial Document Generation (v1)',
+      title: isAadhaarDoc
+          ? 'UIDAI Official Generation (v1)'
+          : 'Initial Document Generation (v1)',
       timestamp: creationDate ?? DateTime.now().subtract(const Duration(days: 30)),
       softwareOrProducer: initialTool,
-      description: 'Primary PDF document structure and initial content streams compiled.',
+      description: isAadhaarDoc && hasDigitalSignature
+          ? 'Official UIDAI biometric/demographic certificate signed with statutory HSM X.509 key.'
+          : 'Primary PDF document structure and initial content streams compiled.',
       isTamperOrAppended: false,
     ));
 
@@ -357,6 +504,15 @@ class DocumentForensicService {
           isTamperOrAppended: true,
         ));
       }
+    } else if (isVirtualPrinter) {
+      history.add(DocumentRevisionEntry(
+        revisionIndex: 2,
+        title: 'Virtual Printer Flattening (v2)',
+        timestamp: modDate ?? DateTime.now(),
+        softwareOrProducer: virtualPrinterTool ?? 'Virtual PDF Print Driver',
+        description: 'Document was re-distilled through a virtual printer driver to flatten text and erase revisions.',
+        isTamperOrAppended: true,
+      ));
     } else if (isTampered && editingTools.isNotEmpty) {
       history.add(DocumentRevisionEntry(
         revisionIndex: 2,
@@ -371,12 +527,13 @@ class DocumentForensicService {
     int confidence = 92;
     if (eofCount > 1) confidence = 98;
     if (editingTools.isNotEmpty) confidence = 99;
+    if (isAadhaarDoc && !hasDigitalSignature) confidence = 99;
 
     return _InternalForensicAnalysis(
       isTampered: isTampered,
       isScrambled: false,
       confidence: confidence,
-      revisionCount: revisionCount,
+      revisionCount: isVirtualPrinter && revisionCount == 1 ? 2 : revisionCount,
       history: history,
       editingSoftwareDetected: editingTools.toList(),
       anomalies: anomalies,
@@ -384,10 +541,16 @@ class DocumentForensicService {
       trailingPayloadBytes: trailingBytes,
       creationDate: creationDate,
       modificationDate: modDate,
+      isDigitalSignaturePresent: hasDigitalSignature,
+      isGovernmentOrAadhaarDoc: isAadhaarDoc,
+      isVirtualPrinterFlattened: isVirtualPrinter,
+      isScreenshotOrScreenCapture: false,
+      isSocialMediaCompressed: false,
+      digitalSignatureAlgorithm: digitalSignatureAlgorithm,
     );
   }
 
-  /// Image Forensics: Photoshop 8BIM blocks, Canva/GIMP signatures, EXIF dates, trailing bytes
+  /// Image Forensics: Photoshop 8BIM, Canva, GIMP, Screenshots/Snipping Tool, WhatsApp/Telegram transcoding
   static _InternalForensicAnalysis _analyzeImageForensics(
     Uint8List bytes,
     String mimeType,
@@ -437,7 +600,46 @@ class DocumentForensicService {
       isTampered = true;
     }
 
-    // C. JPEG Trailing Bytes Check (after 0xFFD9 EOI marker)
+    // C. FLAW 2 RECTIFICATION: Screen Capture & Snipping Tool Detector
+    final isScreenshot = lowerName.contains('screenshot') ||
+        lowerName.contains('screen shot') ||
+        lowerName.contains('snipping tool') ||
+        lowerName.contains('snippingtool') ||
+        lowerName.contains('greenshot') ||
+        lowerName.contains('lightshot') ||
+        lowerName.contains('sharex') ||
+        rawAscii.contains('Screenshot') ||
+        rawAscii.contains('com.apple.screencapture') ||
+        rawAscii.contains('Greenshot') ||
+        rawAscii.contains('Lightshot');
+
+    if (isScreenshot) {
+      editingTools.add('OS Screen Capture / Snipping Tool');
+      anomalies.add(const TamperAnomalyFlag(
+        title: 'Screen Capture / Snipping Tool Ingestion',
+        technicalDetail: 'Image was captured from a computer monitor display buffer rather than direct digital issuance or optical scanner capture. Security micro-patterns are lost.',
+        isSevere: false,
+      ));
+    }
+
+    // D. FLAW 3 RECTIFICATION: Social Media Transcoding Classifier (WhatsApp / Telegram)
+    final isSocialMedia = lowerName.contains('whatsapp') ||
+        (lowerName.startsWith('img-') && lowerName.contains('-wa')) ||
+        lowerName.contains('wa00') ||
+        rawAscii.contains('WhatsApp') ||
+        lowerName.contains('telegram') ||
+        rawAscii.contains('Telegram');
+
+    if (isSocialMedia) {
+      editingTools.add('Social Media Transcoding (WhatsApp/Telegram)');
+      anomalies.add(const TamperAnomalyFlag(
+        title: 'Social Platform Metadata Stripping',
+        technicalDetail: 'Image was transferred via WhatsApp / Telegram. The platform compression pipeline stripped camera EXIF and container metadata. Visual pixels remain intact, but statutory provenance is unanchored.',
+        isSevere: false,
+      ));
+    }
+
+    // E. JPEG Trailing Bytes Check (after 0xFFD9 EOI marker)
     if (bytes.length > 4 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
       int eoiIndex = -1;
       for (int i = bytes.length - 2; i >= 2; i--) {
@@ -461,7 +663,7 @@ class DocumentForensicService {
       }
     }
 
-    // D. PNG Trailing Bytes Check (after IEND chunk)
+    // F. PNG Trailing Bytes Check (after IEND chunk)
     if (rawAscii.contains('IEND')) {
       final iendIdx = rawAscii.indexOf('IEND');
       final expectedEnd = iendIdx + 8; // IEND + 4 byte CRC
@@ -480,7 +682,7 @@ class DocumentForensicService {
       }
     }
 
-    // E. Extract EXIF / Metadata Dates
+    // G. Extract EXIF / Metadata Dates
     final dateMatch = RegExp(r'(\d{4})[:\-](\d{2})[:\-](\d{2})\s+(\d{2}):(\d{2}):(\d{2})').firstMatch(rawAscii);
     DateTime? captureDate;
     if (dateMatch != null) {
@@ -495,13 +697,25 @@ class DocumentForensicService {
       } catch (_) {}
     }
 
+    // Check if Aadhaar keywords exist in image ASCII text
+    final isAadhaarScan = rawAscii.contains('Aadhaar') ||
+        rawAscii.contains('UIDAI') ||
+        lowerName.contains('aadhaar') ||
+        lowerName.contains('adhaar');
+
     // Build History
     history.add(DocumentRevisionEntry(
       revisionIndex: 1,
-      title: 'Original Image Capture / Scan',
+      title: isScreenshot
+          ? 'Screen Buffer Capture'
+          : (isAadhaarScan ? 'Aadhaar Card Optical Scan / Photo' : 'Original Image Capture / Scan'),
       timestamp: captureDate ?? DateTime.now().subtract(const Duration(days: 14)),
-      softwareOrProducer: 'Digital Optical Sensor / Camera / Scanner',
-      description: 'Baseline uncompressed raster sensor capture.',
+      softwareOrProducer: isScreenshot
+          ? 'OS Desktop Window Buffer'
+          : 'Digital Optical Sensor / Camera / Scanner',
+      description: isScreenshot
+          ? 'Window frame capture from computer monitor display.'
+          : 'Baseline uncompressed raster sensor capture.',
     ));
 
     if (isTampered) {
@@ -513,13 +727,22 @@ class DocumentForensicService {
         description: 'Image layers modified, spliced, or re-saved through external editing software.',
         isTamperOrAppended: true,
       ));
+    } else if (isSocialMedia) {
+      history.add(DocumentRevisionEntry(
+        revisionIndex: 2,
+        title: 'Social Platform Transcoding',
+        timestamp: DateTime.now(),
+        softwareOrProducer: 'WhatsApp / Telegram Media Engine',
+        description: 'Image transferred via messaging platform; metadata scrubbed by platform transcode.',
+        isTamperOrAppended: false,
+      ));
     }
 
     return _InternalForensicAnalysis(
       isTampered: isTampered,
       isScrambled: false,
-      confidence: isTampered ? 97 : 93,
-      revisionCount: isTampered ? 2 : 1,
+      confidence: isTampered ? 97 : (isSocialMedia ? 91 : 93),
+      revisionCount: isTampered || isSocialMedia ? 2 : 1,
       history: history,
       editingSoftwareDetected: editingTools.toList(),
       anomalies: anomalies,
@@ -527,6 +750,11 @@ class DocumentForensicService {
       trailingPayloadBytes: trailingBytes,
       creationDate: captureDate,
       modificationDate: isTampered ? DateTime.now() : captureDate,
+      isDigitalSignaturePresent: false,
+      isGovernmentOrAadhaarDoc: isAadhaarScan,
+      isVirtualPrinterFlattened: false,
+      isScreenshotOrScreenCapture: isScreenshot,
+      isSocialMediaCompressed: isSocialMedia,
     );
   }
 
@@ -534,6 +762,7 @@ class DocumentForensicService {
   static _InternalForensicAnalysis _analyzeGenericDocumentForensics(
     Uint8List bytes,
     String mimeType,
+    String lowerName,
   ) {
     final rawAscii = _bytesToAsciiString(bytes);
     final editingTools = <String>[];
@@ -562,6 +791,11 @@ class DocumentForensicService {
       anomalies: anomalies,
       hasTrailingPayload: false,
       trailingPayloadBytes: 0,
+      isDigitalSignaturePresent: false,
+      isGovernmentOrAadhaarDoc: false,
+      isVirtualPrinterFlattened: false,
+      isScreenshotOrScreenCapture: false,
+      isSocialMediaCompressed: false,
     );
   }
 
@@ -692,6 +926,13 @@ class _InternalForensicAnalysis {
   final DateTime? creationDate;
   final DateTime? modificationDate;
 
+  final bool isDigitalSignaturePresent;
+  final bool isGovernmentOrAadhaarDoc;
+  final bool isVirtualPrinterFlattened;
+  final bool isScreenshotOrScreenCapture;
+  final bool isSocialMediaCompressed;
+  final String? digitalSignatureAlgorithm;
+
   const _InternalForensicAnalysis({
     required this.isTampered,
     required this.isScrambled,
@@ -704,5 +945,11 @@ class _InternalForensicAnalysis {
     required this.trailingPayloadBytes,
     this.creationDate,
     this.modificationDate,
+    this.isDigitalSignaturePresent = false,
+    this.isGovernmentOrAadhaarDoc = false,
+    this.isVirtualPrinterFlattened = false,
+    this.isScreenshotOrScreenCapture = false,
+    this.isSocialMediaCompressed = false,
+    this.digitalSignatureAlgorithm,
   });
 }

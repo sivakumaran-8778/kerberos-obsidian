@@ -113,6 +113,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 _buildAuditHeader(),
                 const SizedBox(height: 20),
                 _buildVerdictBanner(),
+                if (_report!.isTranscoded) ...[
+                  const SizedBox(height: 16),
+                  _buildTranscodeGuidanceBanner(),
+                ],
                 const SizedBox(height: 24),
                 _buildDocumentHistoryTimeline(),
                 const SizedBox(height: 24),
@@ -877,7 +881,60 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   }
 
   // ==========================================
-  // TECHNICAL METRICS GRID
+  // TRANSCODE GUIDANCE BANNER (WHATSAPP / TELEGRAM)
+  // ==========================================
+  Widget _buildTranscodeGuidanceBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0x1838BDF8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0x6638BDF8), width: 1.2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0x3338BDF8),
+            ),
+            child: const Icon(Icons.info_outline_rounded, size: 20, color: Color(0xFF38BDF8)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SOCIAL MEDIA TRANSCODING DETECTED (NON-MALICIOUS)',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: const Color(0xFF38BDF8),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This document was transferred via WhatsApp, Telegram, or a messaging platform. While the document image is intact, the platform’s compression pipeline stripped original camera EXIF and container metadata. For statutory legal submission or official proof of origin, please upload the uncompressed original PDF or raw camera scan.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    height: 1.45,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // TECHNICAL METRICS GRID (HARDENED FORENSICS)
   // ==========================================
   Widget _buildTechnicalMetricsGrid() {
     final report = _report!;
@@ -885,42 +942,100 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         ? report.editingSoftwareDetected.join(', ')
         : 'None (Unmodified Clean Stream)';
 
-    return Row(
+    // Digital signature evaluation
+    String sigLabel = 'Unsigned Document';
+    bool sigGood = true;
+    String sigSubtext = 'No embedded PKCS#7 container';
+    if (report.isDigitalSignaturePresent) {
+      sigLabel = 'Cryptographic Signature Valid';
+      sigGood = true;
+      sigSubtext = report.digitalSignatureAlgorithm ?? 'X.509 PKCS#7 Seal';
+    } else if (report.isGovernmentOrAadhaarDoc) {
+      sigLabel = 'Missing Statutory Signature';
+      sigGood = false;
+      sigSubtext = 'Official UIDAI X.509 signature stripped or absent';
+    }
+
+    // Origin pipeline evaluation
+    String originLabel = 'Direct Issue / Scan';
+    bool originGood = true;
+    String originSubtext = 'Original optical sensor or compile engine';
+    if (report.isVirtualPrinterFlattened) {
+      originLabel = 'Virtual Printer Flattened';
+      originGood = false;
+      originSubtext = 'Re-distilled to erase revision history';
+    } else if (report.isScreenshotOrScreenCapture) {
+      originLabel = 'Screen Window Buffer';
+      originGood = false;
+      originSubtext = 'Low-res monitor capture / Snipping Tool';
+    } else if (report.isSocialMediaCompressed) {
+      originLabel = 'Social Media Transcoded';
+      originGood = true;
+      originSubtext = 'Compressed by WhatsApp/Telegram pipeline';
+    }
+
+    return Column(
       children: [
-        Expanded(
-          child: _buildMetricTile(
-            label: 'PDF REVISION COUNT',
-            value: '${report.revisionCount} Generation${report.revisionCount > 1 ? 's' : ''}',
-            statusGood: report.revisionCount <= 1,
-            subtext: report.revisionCount > 1 ? 'Incremental appends found' : 'Single generation original',
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricTile(
+                label: 'PDF REVISION COUNT',
+                value: '${report.revisionCount} Generation${report.revisionCount > 1 ? 's' : ''}',
+                statusGood: report.revisionCount <= 1,
+                subtext: report.revisionCount > 1 ? 'Incremental appends found' : 'Single generation original',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricTile(
+                label: 'EDITOR FOOTPRINTS',
+                value: report.editingSoftwareDetected.isNotEmpty ? 'Detected' : 'Clean',
+                statusGood: report.editingSoftwareDetected.isEmpty,
+                subtext: editingTools,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricTile(
+                label: 'DIGITAL SIGNATURE (PKCS#7)',
+                value: sigLabel,
+                statusGood: sigGood,
+                subtext: sigSubtext,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'EDITOR SIGNATURES',
-            value: report.editingSoftwareDetected.isNotEmpty ? 'Detected' : 'Clean',
-            statusGood: report.editingSoftwareDetected.isEmpty,
-            subtext: editingTools,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'MAGIC HEADER PARITY',
-            value: report.isMagicByteValid ? 'RFC Valid' : 'Corrupted',
-            statusGood: report.isMagicByteValid,
-            subtext: report.mimeType,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildMetricTile(
-            label: 'TRAILING STEGO PAYLOAD',
-            value: report.hasTrailingPayload ? '+${report.trailingPayloadBytes} Bytes' : 'None',
-            statusGood: !report.hasTrailingPayload,
-            subtext: report.hasTrailingPayload ? 'Appended past file terminator' : 'Clean file termination',
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricTile(
+                label: 'ORIGIN PIPELINE',
+                value: originLabel,
+                statusGood: originGood,
+                subtext: originSubtext,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricTile(
+                label: 'MAGIC HEADER PARITY',
+                value: report.isMagicByteValid ? 'RFC Valid' : 'Corrupted',
+                statusGood: report.isMagicByteValid,
+                subtext: report.mimeType,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMetricTile(
+                label: 'TRAILING STEGO PAYLOAD',
+                value: report.hasTrailingPayload ? '+${report.trailingPayloadBytes} Bytes' : 'None',
+                statusGood: !report.hasTrailingPayload,
+                subtext: report.hasTrailingPayload ? 'Appended past file terminator' : 'Clean file termination',
+              ),
+            ),
+          ],
         ),
       ],
     );

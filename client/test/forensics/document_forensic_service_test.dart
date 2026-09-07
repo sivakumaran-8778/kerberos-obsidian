@@ -93,7 +93,6 @@ startxref
     });
 
     test('Detects Photoshop 8BIM signatures on medical bill scan image', () {
-      // JPEG SOI marker: 0xFF, 0xD8
       final header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
       final photoshopPayload = utf8.encode('RawScanData...Photoshop 3.0...8BIM...Adobe Photoshop 2024...RasterLayer');
       final footer = [0xFF, 0xD9]; // JPEG EOI
@@ -111,7 +110,6 @@ startxref
     });
 
     test('Detects Canva design footprint on altered document', () {
-      // PNG header: 89 50 4E 47 0D 0A 1A 0A
       final pngHeader = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
       final canvaPayload = utf8.encode('tEXtSoftware\x00Canva Graphic Studio canvas element IEND\xAE\x42\x60\x82');
       final bytes = Uint8List.fromList([...pngHeader, ...canvaPayload]);
@@ -160,6 +158,140 @@ trailer
       expect(report.trailingPayloadBytes, greaterThan(32));
       expect(report.isTampered, isTrue);
       expect(report.anomalies.any((a) => a.title.contains('Trailing Injected Payload')), isTrue);
+    });
+
+    // ==========================================
+    // ADVANCED HARDENED FLAW TESTS
+    // ==========================================
+
+    test('Flaw 1: Detects Virtual Printer Flattening & Missing UIDAI Signature on Aadhaar', () {
+      final flattenedAadhaarPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Government of India - Unique Identification Authority of India - Aadhaar Card)
+   /Producer (Microsoft: Print to PDF) >>
+endobj
+trailer
+<< /Size 1 /Root 1 0 R >>
+%%EOF
+''';
+      final bytes = Uint8List.fromList(utf8.encode(flattenedAadhaarPdf));
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'my_aadhaar_card.pdf',
+      );
+
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.isGovernmentOrAadhaarDoc, isTrue);
+      expect(report.isVirtualPrinterFlattened, isTrue);
+      expect(report.isDigitalSignaturePresent, isFalse);
+      expect(report.anomalies.any((a) => a.title.contains('Missing Statutory UIDAI Digital Signature')), isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Virtual Printer Laundering Detected')), isTrue);
+    });
+
+    test('Flaw 1: Validates Genuine e-Aadhaar with PKCS#7 Digital Signature Container', () {
+      final genuineAadhaarPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Unique Identification Authority of India - e-Aadhaar)
+   /Producer (iText 5.5 UIDAI HSM Server) >>
+endobj
+2 0 obj
+<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /ByteRange [0 100 200 300] >>
+endobj
+trailer
+<< /Size 2 /Root 1 0 R >>
+%%EOF
+''';
+      final bytes = Uint8List.fromList(utf8.encode(genuineAadhaarPdf));
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'eaadhaar_official.pdf',
+      );
+
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+      expect(report.isGovernmentOrAadhaarDoc, isTrue);
+      expect(report.isDigitalSignaturePresent, isTrue);
+      expect(report.digitalSignatureAlgorithm, contains('PKCS#7'));
+      expect(report.isVirtualPrinterFlattened, isFalse);
+      expect(report.isTampered, isFalse);
+    });
+
+    test('Flaw 1: Detects Medical Bill Laundering via Virtual PDF Printer', () {
+      final launderedMedicalPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Hospital Patient Inpatient Bill)
+   /Producer (Foxit Reader PDF Printer) >>
+endobj
+trailer
+<< /Size 1 /Root 1 0 R >>
+%%EOF
+''';
+      final bytes = Uint8List.fromList(utf8.encode(launderedMedicalPdf));
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'apollo_hospital_discharge_bill.pdf',
+      );
+
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.isVirtualPrinterFlattened, isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Virtual Printer Flattening Detected')), isTrue);
+    });
+
+    test('Flaw 2: Detects Screen Capture / Snipping Tool Ingestion', () {
+      final pngHeader = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+      final screenshotPayload = utf8.encode('tEXtSoftware\x00Greenshot Window Capture IEND\xAE\x42\x60\x82');
+      final bytes = Uint8List.fromList([...pngHeader, ...screenshotPayload]);
+
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'Screenshot_2024-03-01_Aadhaar.png',
+      );
+
+      expect(report.isScreenshotOrScreenCapture, isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Screen Capture')), isTrue);
+    });
+
+    test('Flaw 3: Classifies WhatsApp / Telegram Transcoding Accurately without False Tamper Accusation', () {
+      final header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01];
+      final footer = [0xFF, 0xD9]; // JPEG EOI
+      final bytes = Uint8List.fromList([...header, ...footer]);
+
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'IMG-20240301-WA0001.jpg',
+      );
+
+      expect(report.verdict, equals(DocumentForensicVerdict.socialMediaTranscoded));
+      expect(report.isTranscoded, isTrue);
+      expect(report.isSocialMediaCompressed, isTrue);
+      expect(report.isTampered, isFalse);
+      expect(report.anomalies.any((a) => a.title.contains('Social Platform Metadata Stripping')), isTrue);
+    });
+
+    test('Flaw 4: Detects Font Subset Discrepancy on Injected Numerical Fields', () {
+      final fontInconsistentPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Page /Resources << /Font <<
+   /F1 << /Type /Font /BaseFont /ABCDEF+Helvetica >>
+   /F2 << /Type /Font /BaseFont /GHIJKL+TimesNewRoman >>
+   /F3 << /Type /Font /BaseFont /MNOPQR+ArialMT >>
+>> >> >>
+endobj
+trailer
+<< /Size 1 /Root 1 0 R >>
+%%EOF
+''';
+      final bytes = Uint8List.fromList(utf8.encode(fontInconsistentPdf));
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: bytes,
+        fileName: 'inconsistent_invoice.pdf',
+      );
+
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.anomalies.any((a) => a.title.contains('Font Subset Inconsistency')), isTrue);
     });
   });
 }
