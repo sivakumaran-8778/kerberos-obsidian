@@ -92,6 +92,9 @@ class MockLedgerService extends Fake with ChangeNotifier implements LedgerServic
   ProvenanceRecord? getRecordByHash(String sha256Hash, {String? filterEmail}) => null;
 
   @override
+  ProvenanceRecord? getRecordByFileName(String fileName, {String? filterEmail}) => null;
+
+  @override
   List<ProvenanceRecord> getHistory({String? filterEmail}) => [];
 }
 

@@ -232,8 +232,8 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
     }
   }
 
-  /// Attach & Seal Asset Picker - 100% Web & Desktop safe (never evaluates picked.path on Web)
-  Future<void> _pickAndSealAsset() async {
+  /// Attach File Picker - 100% Web & Desktop safe (never evaluates picked.path on Web)
+  Future<void> _pickAndSendFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
@@ -280,7 +280,7 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to seal/load files: $e', style: GoogleFonts.plusJakartaSans(fontSize: 12.5)),
+            content: Text('Failed to load files: $e', style: GoogleFonts.plusJakartaSans(fontSize: 12.5)),
             backgroundColor: const Color(0xFFF43F5E),
           ),
         );
@@ -1294,12 +1294,12 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
       ),
       child: Row(
         children: [
-          // Attach & Seal Asset Button
+          // Attach File Button
           if (isMobile)
             Tooltip(
-              message: 'Attach & Seal Files',
+              message: 'Attach Files',
               child: InkWell(
-                onTap: _pickAndSealAsset,
+                onTap: _pickAndSendFile,
                 borderRadius: BorderRadius.circular(9),
                 child: Container(
                   width: 34,
@@ -1321,8 +1321,8 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
               height: 38,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               icon: Icons.attach_file_rounded,
-              onTap: _pickAndSealAsset,
-              child: const Text('Attach & Seal Asset'),
+              onTap: _pickAndSendFile,
+              child: const Text('Attach File'),
             ),
           SizedBox(width: isMobile ? 5 : 8),
 

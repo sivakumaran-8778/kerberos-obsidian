@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 
 import '../../network/services/webrtc_service.dart';
 import '../../network/services/signaling_service.dart';
-import '../../provenance/services/asset_processor.dart';
 import '../../ledger/services/ledger_service.dart';
 import '../../ledger/models/provenance_record.dart';
 import '../models/radar_models.dart';
@@ -514,64 +513,48 @@ class P2PSessionService extends ChangeNotifier {
     }
   }
 
-  /// Performs cryptographic sealing, ledger entry, and DataChannel transmission for a single asset.
+  /// Performs DataChannel transmission for a single asset without re-sealing into the ledger.
+  /// If the asset was previously sealed in the ledger, its sealed status and manifest URI are preserved.
   Future<void> _sealAndSendSingleFile(XFile file) async {
-    _isSealing = true;
-    _sealingStep = 'Reading bitstream & computing SHA-256 digest...';
-    notifyListeners();
-
     try {
       final fileName = file.name.isNotEmpty
           ? file.name
-          : (kIsWeb ? 'sealed_asset.bin' : (file.path.isNotEmpty ? p.basename(file.path) : 'sealed_asset.bin'));
+          : (kIsWeb ? 'shared_asset.bin' : (file.path.isNotEmpty ? p.basename(file.path) : 'shared_asset.bin'));
       final name = fileName.toLowerCase();
       final isAudio = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'webm', 'opus', 'flac'].any((e) => name.endsWith('.$e'));
 
-      // 1. Process and compute SHA-256 & perceptual hash
-      final metadata = await AssetProcessor.processFile(file);
+      // 1. Read bitstream and compute SHA-256 for transmission integrity (no C2PA re-signing)
       final fileBytes = await file.readAsBytes();
+      final sha256Hash = sha256.convert(fileBytes).toString();
 
-      _sealingStep = 'Generating C2PA JUMBF claim & Ed25519 signature...';
-      notifyListeners();
+      // 2. Check if this asset was previously sealed in the provenance ledger
+      ProvenanceRecord? existingRecord;
+      try {
+        existingRecord = _ledger.getRecordByHash(sha256Hash) ?? _ledger.getRecordByFileName(fileName);
+      } catch (_) {
+        existingRecord = null;
+      }
+      final isAlreadySealed = existingRecord != null;
+      final manifestUri = existingRecord?.c2paManifestUri ??
+          (isAudio ? 'urn:c2pa:obsidian:voice:${sha256Hash.substring(0, 12)}' : '');
 
-      final manifestUri = isAudio
-          ? 'urn:c2pa:obsidian:voice:${metadata.sha256Hash.substring(0, 12)}'
-          : 'urn:c2pa:obsidian:${metadata.sha256Hash.substring(0, 12)}';
-      
-      // 2. Seal into air-gapped AES-256 Hive ledger (deduplicated by hash in LedgerService)
-      final userEmail = _signaling.userEmail;
-      final record = ProvenanceRecord(
-        id: const Uuid().v4(),
-        originalFileHash: metadata.sha256Hash,
-        c2paManifestUri: manifestUri,
-        timestamp: DateTime.now(),
-        signature: isAudio
-            ? 'ed25519-voice-seal-${DateTime.now().millisecondsSinceEpoch}'
-            : 'ed25519-p2p-seal-${DateTime.now().millisecondsSinceEpoch}',
-        filePath: fileName,
-        ownerEmail: userEmail.isNotEmpty ? userEmail : null,
-      );
-      await _ledger.addRecord(record);
-
-      _sealingStep = 'Seal anchored in local ledger. Dispatching to peer...';
-      notifyListeners();
-
-      await Future.delayed(const Duration(milliseconds: 350));
+      // Do NOT seal again: skip ledger write and start transferring immediately
       _isSealing = false;
       _isTransferring = true;
       _transferProgress = 0.0;
       _activeTransferringFileName = fileName;
+      notifyListeners();
 
       final fileAttachment = P2PFileAttachment(
         fileId: const Uuid().v4(),
         fileName: fileName,
         fileSizeBytes: fileBytes.length,
-        sha256Hash: metadata.sha256Hash,
+        sha256Hash: sha256Hash,
         c2paManifestUri: manifestUri,
         bytes: fileBytes,
         progress: 0.0,
         isCompleted: false,
-        isSealed: true,
+        isSealed: isAlreadySealed,
         isVoiceNote: isAudio,
         isLiveRecorded: false, // Selected from system storage, not instant recording
         durationSeconds: 0,
@@ -583,7 +566,7 @@ class P2PSessionService extends ChangeNotifier {
         id: messageId,
         senderId: 'self',
         senderName: 'You',
-        text: isAudio ? 'Voice note: $fileName' : 'Sent sealed digital asset: $fileName',
+        text: isAudio ? 'Audio file: $fileName' : 'File: $fileName',
         timestamp: DateTime.now(),
         isSelf: true,
         fileAttachment: fileAttachment,
@@ -609,11 +592,11 @@ class P2PSessionService extends ChangeNotifier {
         _simulatedResponseTimer = Timer(const Duration(milliseconds: 800), () {
           if (isAudio) {
             _appendPeerMessage(
-              'Received voice note "$fileName". Cryptographic SHA-256 seal [${metadata.sha256Hash.substring(0, 8)}...] validated against C2PA container.',
+              'Received voice note "$fileName" [${sha256Hash.substring(0, 8)}...].',
             );
           } else {
             _appendPeerMessage(
-              'Received "$fileName" (${(fileBytes.length / 1024).toStringAsFixed(1)} KB). Cryptographic SHA-256 seal [${metadata.sha256Hash.substring(0, 8)}...] validated against C2PA container.',
+              'Received "$fileName" (${(fileBytes.length / 1024).toStringAsFixed(1)} KB) [${sha256Hash.substring(0, 8)}...].',
             );
           }
         });
@@ -628,7 +611,7 @@ class P2PSessionService extends ChangeNotifier {
         'fileSizeBytes': fileAttachment.fileSizeBytes,
         'sha256Hash': fileAttachment.sha256Hash,
         'c2paManifestUri': fileAttachment.c2paManifestUri,
-        'isSealed': true,
+        'isSealed': fileAttachment.isSealed,
         'isVoiceNote': isAudio,
         'isLiveRecorded': false,
         'durationSeconds': 0,
@@ -820,18 +803,23 @@ class P2PSessionService extends ChangeNotifier {
         isCompleted: true,
       );
 
-      // Register received sealed asset into air-gapped ledger
-      final userEmail = _signaling.userEmail;
-      final record = ProvenanceRecord(
-        id: const Uuid().v4(),
-        originalFileHash: completedAttachment.sha256Hash,
-        c2paManifestUri: completedAttachment.c2paManifestUri,
-        timestamp: DateTime.now(),
-        signature: 'received-from-${_activePeer?.displayName ?? "peer"}',
-        filePath: completedAttachment.fileName,
-        ownerEmail: userEmail.isNotEmpty ? userEmail : null,
-      );
-      await _ledger.addRecord(record);
+      // Only register received asset into ledger if the sender transmitted a sealed provenance asset
+      if (completedAttachment.isSealed && completedAttachment.c2paManifestUri.isNotEmpty) {
+        final userEmail = _signaling.userEmail;
+        final record = ProvenanceRecord(
+          id: const Uuid().v4(),
+          originalFileHash: completedAttachment.sha256Hash,
+          c2paManifestUri: completedAttachment.c2paManifestUri,
+          timestamp: DateTime.now(),
+          signature: 'received-from-${_activePeer?.displayName ?? "peer"}',
+          filePath: completedAttachment.fileName,
+          ownerEmail: userEmail.isNotEmpty ? userEmail : null,
+        );
+        await _ledger.addRecord(record);
+        _appendSystemNotice('Received "${completedAttachment.fileName}". Seal anchored into local air-gapped ledger.');
+      } else {
+        _appendSystemNotice('Received "${completedAttachment.fileName}".');
+      }
 
       // Update message list
       for (int i = _messages.length - 1; i >= 0; i--) {

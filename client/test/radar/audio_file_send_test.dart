@@ -80,6 +80,15 @@ class MockLedgerService extends Fake implements LedgerService {
   }
 
   @override
+  ProvenanceRecord? getRecordByFileName(String fileName, {String? filterEmail}) {
+    final target = fileName.split(RegExp(r'[\\/]')).last.trim().toLowerCase();
+    return savedRecords.cast<ProvenanceRecord?>().firstWhere(
+      (r) => r != null && r.filePath.split(RegExp(r'[\\/]')).last.trim().toLowerCase() == target,
+      orElse: () => null,
+    );
+  }
+
+  @override
   List<ProvenanceRecord> getHistory({String? filterEmail}) => savedRecords;
 
   List<ProvenanceRecord> get records => savedRecords;
@@ -112,7 +121,7 @@ void main() {
       );
     });
 
-    test('sealAndSendFile identifies .mp3 as voice note and creates voice manifest URI', () async {
+    test('sealAndSendFile identifies .mp3 as voice note without re-sealing into ledger', () async {
       final audioBytes = Uint8List.fromList([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00]); // ID3 dummy
       final xFile = XFile.fromData(audioBytes, name: 'recording.mp3', path: 'recording.mp3');
 
@@ -123,13 +132,23 @@ void main() {
       expect(sentMsg.fileAttachment, isNotNull);
       expect(sentMsg.fileAttachment!.isVoiceNote, isTrue);
       expect(sentMsg.fileAttachment!.c2paManifestUri, startsWith('urn:c2pa:obsidian:voice:'));
-      expect(mockLedger.savedRecords, hasLength(1));
-      expect(mockLedger.savedRecords.first.c2paManifestUri, startsWith('urn:c2pa:obsidian:voice:'));
+      // Does not re-seal into ledger when sending in chat
+      expect(mockLedger.savedRecords, isEmpty);
     });
 
-    test('sealAndSendFile treats .pdf as standard sealed asset without voice flag', () async {
+    test('sealAndSendFile preserves existing sealed ledger manifest if file was previously sealed', () async {
       final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46, 0x2D]); // %PDF-
       final xFile = XFile.fromData(pdfBytes, name: 'document.pdf', path: 'document.pdf');
+      
+      // Pre-seed mock ledger with existing sealed record
+      mockLedger.savedRecords.add(ProvenanceRecord(
+        id: 'orig-doc-id',
+        originalFileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        c2paManifestUri: 'urn:c2pa:obsidian:presealed123',
+        timestamp: DateTime.now(),
+        signature: 'sig',
+        filePath: 'document.pdf',
+      ));
 
       await sessionService.sealAndSendFile(xFile);
 
@@ -137,11 +156,13 @@ void main() {
       final sentMsg = sessionService.messages.first;
       expect(sentMsg.fileAttachment, isNotNull);
       expect(sentMsg.fileAttachment!.isVoiceNote, isFalse);
-      expect(sentMsg.fileAttachment!.c2paManifestUri, startsWith('urn:c2pa:obsidian:'));
-      expect(sentMsg.fileAttachment!.c2paManifestUri, isNot(contains(':voice:')));
+      expect(sentMsg.fileAttachment!.isSealed, isTrue);
+      expect(sentMsg.fileAttachment!.c2paManifestUri, equals('urn:c2pa:obsidian:presealed123'));
+      // Exactly 1 existing record retained, not re-sealed again
+      expect(mockLedger.savedRecords, hasLength(1));
     });
 
-    test('sealAndSendFile supports all standard audio extensions', () async {
+    test('sealAndSendFile supports all standard audio extensions without adding ledger records', () async {
       final extensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'webm', 'opus', 'flac'];
       for (final ext in extensions) {
         final bytes = Uint8List.fromList([0x00, 0x01, 0x02, 0x03]);
@@ -153,6 +174,7 @@ void main() {
         expect(lastMsg.fileAttachment!.isVoiceNote, isTrue, reason: 'Failed for extension: $ext');
         expect(lastMsg.fileAttachment!.c2paManifestUri, startsWith('urn:c2pa:obsidian:voice:'));
       }
+      expect(mockLedger.savedRecords, isEmpty);
     });
   });
 }
