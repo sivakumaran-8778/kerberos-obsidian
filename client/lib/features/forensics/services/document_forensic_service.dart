@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import '../../ledger/models/provenance_record.dart';
@@ -273,47 +274,6 @@ class DocumentForensicService {
     // Convert raw bytes to ASCII-safe probe string for structural token scanning
     final rawAscii = _bytesToAsciiString(bytes);
 
-    // A. Count %%EOF markers
-    final eofRegex = RegExp(r'%%EOF');
-    final eofMatches = eofRegex.allMatches(rawAscii).toList();
-    final eofCount = eofMatches.length;
-
-    // B. Check for /Prev xref pointers (indicates appended revision trailers)
-    final prevRegex = RegExp(r'/Prev\s+(\d+)');
-    final prevMatches = prevRegex.allMatches(rawAscii).toList();
-
-    // C. Check trailing bytes after final %%EOF
-    bool hasTrailing = false;
-    int trailingBytes = 0;
-    if (eofMatches.isNotEmpty) {
-      final lastEofEnd = eofMatches.last.end;
-      if (lastEofEnd < bytes.length) {
-        final remaining = bytes.sublist(lastEofEnd);
-        // Trim whitespace/newlines
-        final nonWhitespace = remaining.where((b) => b != 10 && b != 13 && b != 32).length;
-        if (nonWhitespace > 16) {
-          hasTrailing = true;
-          trailingBytes = remaining.length;
-          anomalies.add(TamperAnomalyFlag(
-            title: 'Trailing Injected Payload Detected',
-            technicalDetail: '$trailingBytes bytes appended past final %%EOF terminator. Possible steganography or hidden payload injection.',
-            isSevere: true,
-          ));
-        }
-      }
-    }
-
-    // D. Extract Document Metadata (/Producer, /Creator, /CreationDate, /ModDate)
-    final producerMatch = RegExp(r'/Producer\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
-    final creatorMatch = RegExp(r'/Creator\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
-    final creationDateMatch = RegExp(r'/CreationDate\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
-    final modDateMatch = RegExp(r'/ModDate\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
-
-    String? producer = _extractPdfString(producerMatch);
-    String? creator = _extractPdfString(creatorMatch);
-    DateTime? creationDate = _parsePdfDate(_extractPdfString(creationDateMatch));
-    DateTime? modDate = _parsePdfDate(_extractPdfString(modDateMatch));
-
     // E. Scan for Editing Software Signatures in raw bitstream
     const suspiciousEditorSignatures = {
       'Adobe Acrobat': 'Adobe Acrobat PDF Editor',
@@ -331,6 +291,29 @@ class DocumentForensicService {
       'Sejda': 'Sejda PDF Editor',
       'PDF24': 'PDF24 Creator Tool',
     };
+
+    // A. ISO 32000 Structural Revision & Generation Parser
+    final revAnalysis = _parsePdfRevisions(bytes, rawAscii, suspiciousEditorSignatures);
+
+    // B. Check trailing bytes after final %%EOF
+    if (revAnalysis.hasTrailingPayload) {
+      anomalies.add(TamperAnomalyFlag(
+        title: 'Trailing Injected Payload Detected',
+        technicalDetail: '${revAnalysis.trailingBytes} bytes appended past final %%EOF terminator. Possible steganography or hidden payload injection.',
+        isSevere: true,
+      ));
+    }
+
+    // C. Extract Document Metadata (/Producer, /Creator, /CreationDate, /ModDate)
+    final producerMatch = RegExp(r'/Producer\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
+    final creatorMatch = RegExp(r'/Creator\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
+    final creationDateMatch = RegExp(r'/CreationDate\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
+    final modDateMatch = RegExp(r'/ModDate\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(rawAscii);
+
+    String? producer = _extractPdfString(producerMatch);
+    String? creator = _extractPdfString(creatorMatch);
+    DateTime? creationDate = _parsePdfDate(_extractPdfString(creationDateMatch));
+    DateTime? modDate = _parsePdfDate(_extractPdfString(modDateMatch));
 
     for (final entry in suspiciousEditorSignatures.entries) {
       if (rawAscii.contains(entry.key)) {
@@ -416,7 +399,7 @@ class DocumentForensicService {
           isSevere: true,
         ));
       } else {
-        if (eofCount > 1) {
+        if (revAnalysis.hasIncrementalTamper) {
           isTampered = true;
           anomalies.add(const TamperAnomalyFlag(
             title: 'UIDAI Signature ByteRange Compromised',
@@ -465,13 +448,14 @@ class DocumentForensicService {
       isTampered = true;
     }
 
-    // I. Incremental Revision Tampering Diagnosis
-    final revisionCount = eofCount > 0 ? eofCount : 1;
-    if (eofCount > 1 || prevMatches.isNotEmpty) {
+    // I. Incremental Revision Tampering Diagnosis (Accurate ISO 32000 Generation Count)
+    if (revAnalysis.hasIncrementalTamper) {
       isTampered = true;
       anomalies.add(TamperAnomalyFlag(
-        title: 'Incremental Revision Tampering ($revisionCount Generations)',
-        technicalDetail: 'Document contains $eofCount %%EOF terminators and ${prevMatches.length} /Prev xref revision pointers. PDF content was modified post-issuance via incremental update save.',
+        title: 'Incremental Revision Tampering (${revAnalysis.trueGenerationCount} Generations)',
+        technicalDetail: revAnalysis.isLinearized
+            ? 'Document is linearized (Fast Web View) with ${revAnalysis.trueGenerationCount - 1} appended incremental revision saves post-compilation.'
+            : 'Document contains ${revAnalysis.trueGenerationCount} verified revision generations linked via incremental xref sections (/Prev pointers). Content was modified post-issuance via incremental update save.',
         isSevere: true,
       ));
     }
@@ -501,14 +485,14 @@ class DocumentForensicService {
       }
     }
 
-    if (hasTrailing) {
+    if (revAnalysis.hasTrailingPayload) {
       isTampered = true;
     }
 
     // L. FEATURE 4: Incremental PDF Text Diff Extractor
     PdfRevisionDiff? revisionDiff;
-    if (eofCount > 1) {
-      revisionDiff = _extractPdfStreamDiff(bytes, eofMatches, rawAscii);
+    if (revAnalysis.trueGenerationCount > 1 && revAnalysis.firstRevisionEnd > 0) {
+      revisionDiff = _extractPdfStreamDiff(bytes, revAnalysis.firstRevisionEnd, rawAscii);
     }
 
     // M. FEATURE 2: UIDAI Secure QR Code Cross-Validation
@@ -525,29 +509,40 @@ class DocumentForensicService {
     // N. FEATURE 1: Error Level Analysis (ELA) Matrix
     final ela = _computeElaTensor(bytes, isTampered: isTampered, editorSignatures: editingTools.toList());
 
-    // Build Chronological History
-    final initialTool = producer ?? creator ?? (isAadhaarDoc ? 'UIDAI Automated Document Issuer' : 'Official Document Generation System');
+    // Build Chronological History (Exact per-generation records)
+    final rev1 = revAnalysis.revisions.isNotEmpty ? revAnalysis.revisions.first : null;
+    final initialTool = rev1?.producer ?? rev1?.creator ?? producer ?? creator ?? (isAadhaarDoc ? 'UIDAI Automated Document Issuer' : 'Official Document Generation System');
+    final initialTime = rev1?.timestamp ?? creationDate ?? DateTime.now().subtract(const Duration(days: 30));
+
     history.add(DocumentRevisionEntry(
       revisionIndex: 1,
       title: isAadhaarDoc
           ? 'UIDAI Official Generation (v1)'
-          : 'Initial Document Generation (v1)',
-      timestamp: creationDate ?? DateTime.now().subtract(const Duration(days: 30)),
+          : (revAnalysis.isLinearized ? 'Initial Linearized Web Generation (v1)' : 'Initial Document Generation (v1)'),
+      timestamp: initialTime,
       softwareOrProducer: initialTool,
       description: isAadhaarDoc && hasDigitalSignature
           ? 'Official UIDAI biometric/demographic certificate signed with statutory HSM X.509 key.'
-          : 'Primary PDF document structure and initial content streams compiled.',
+          : (revAnalysis.isLinearized
+              ? 'Primary document compiled with ISO 32000 Fast Web View linearization tables.'
+              : 'Primary PDF document structure and initial content streams compiled.'),
       isTamperOrAppended: false,
     ));
 
-    if (eofCount > 1) {
-      for (int i = 2; i <= eofCount; i++) {
+    if (revAnalysis.trueGenerationCount > 1) {
+      for (int i = 2; i <= revAnalysis.trueGenerationCount; i++) {
+        final revSlice = (i - 1 < revAnalysis.revisions.length) ? revAnalysis.revisions[i - 1] : null;
+        final revTool = revSlice?.detectedTools.isNotEmpty == true
+            ? revSlice!.detectedTools.first
+            : (revSlice?.producer ?? (editingTools.isNotEmpty ? editingTools.first : 'Incremental PDF Editor'));
+        final revTimestamp = revSlice?.timestamp ?? modDate ?? DateTime.now();
+
         history.add(DocumentRevisionEntry(
           revisionIndex: i,
           title: 'Appended Revision Save (v$i)',
-          timestamp: modDate ?? DateTime.now(),
-          softwareOrProducer: editingTools.isNotEmpty ? editingTools.first : 'Incremental PDF Editor',
-          description: revisionDiff != null && revisionDiff.hasChanges
+          timestamp: revTimestamp,
+          softwareOrProducer: revTool,
+          description: revisionDiff != null && revisionDiff.hasChanges && i == 2
               ? revisionDiff.summary
               : 'Trailer appended with modified stream offsets (/Prev pointer). Original content was altered.',
           isTamperOrAppended: true,
@@ -574,7 +569,7 @@ class DocumentForensicService {
     }
 
     int confidence = 92;
-    if (eofCount > 1) confidence = 98;
+    if (revAnalysis.trueGenerationCount > 1) confidence = 98;
     if (editingTools.isNotEmpty) confidence = 99;
     if (isAadhaarDoc && !hasDigitalSignature) confidence = 99;
 
@@ -582,14 +577,14 @@ class DocumentForensicService {
       isTampered: isTampered,
       isScrambled: false,
       confidence: confidence,
-      revisionCount: isVirtualPrinter && revisionCount == 1 ? 2 : revisionCount,
+      revisionCount: isVirtualPrinter && revAnalysis.trueGenerationCount == 1 ? 2 : revAnalysis.trueGenerationCount,
       history: history,
       editingSoftwareDetected: editingTools.toList(),
       anomalies: anomalies,
-      hasTrailingPayload: hasTrailing,
-      trailingPayloadBytes: trailingBytes,
-      creationDate: creationDate,
-      modificationDate: modDate,
+      hasTrailingPayload: revAnalysis.hasTrailingPayload,
+      trailingPayloadBytes: revAnalysis.trailingBytes,
+      creationDate: initialTime,
+      modificationDate: modDate ?? (revAnalysis.trueGenerationCount > 1 ? history.last.timestamp : null),
       isDigitalSignaturePresent: hasDigitalSignature,
       isGovernmentOrAadhaarDoc: isAadhaarDoc,
       isVirtualPrinterFlattened: isVirtualPrinter,
@@ -600,6 +595,173 @@ class DocumentForensicService {
       qrValidation: qrValidation,
       revisionDiff: revisionDiff,
       fileCategory: ForensicFileCategory.document,
+    );
+  }
+
+  /// ISO 32000-1 Structural PDF Revision & Generation Parser
+  static _PdfRevisionAnalysis _parsePdfRevisions(
+    Uint8List bytes,
+    String rawAscii,
+    Map<String, String> suspiciousEditorSignatures,
+  ) {
+    // 1. Check for Linearization (Fast Web View - ISO 32000-1 Annex F)
+    final probeLength = rawAscii.length > 2048 ? 2048 : rawAscii.length;
+    final headSlice = rawAscii.substring(0, probeLength);
+    final isLinearized = headSlice.contains('/Linearized');
+
+    // 2. Find genuine structural revision terminators
+    // In conforming PDF, every revision ends with:
+    // startxref[\s\r\n]+<xref_offset>[\s\r\n]+(?:%[^\r\n]*[\s\r\n]+)*%%EOF
+    final startXrefPattern = RegExp(r'startxref[\s\r\n]+(\d+)[\s\r\n]+(?:%[^\r\n]*[\s\r\n]+)*%%EOF');
+    final startXrefMatches = startXrefPattern.allMatches(rawAscii).toList();
+
+    // Fallback: in case startxref was omitted or broken, find non-consecutive line-aligned %%EOF
+    final lineEofPattern = RegExp(r'(?:^|[\r\n])\s*%%EOF');
+    final rawEofMatches = lineEofPattern.allMatches(rawAscii).toList();
+
+    // Filter rawEofMatches to ensure distinct physical sections (at least 32 bytes apart)
+    final distinctRawEofs = <Match>[];
+    for (final m in rawEofMatches) {
+      if (distinctRawEofs.isEmpty || m.start >= distinctRawEofs.last.end + 16) {
+        distinctRawEofs.add(m);
+      }
+    }
+
+    // Determine the structural revision boundaries
+    final List<int> eofBoundaries = [];
+    if (startXrefMatches.isNotEmpty) {
+      for (final m in startXrefMatches) {
+        eofBoundaries.add(m.end);
+      }
+    } else {
+      for (final m in distinctRawEofs) {
+        eofBoundaries.add(m.end);
+      }
+    }
+
+    // 3. Scan for /Prev xref pointers linking backward generations
+    final prevPattern = RegExp(r'/Prev[\s\r\n]+(\d+)');
+    final prevMatches = prevPattern.allMatches(rawAscii).toList();
+
+    // 4. Calculate True Generation Count
+    int trueGenerationCount = 1;
+    bool hasIncrementalTamper = false;
+
+    if (startXrefMatches.length > 1) {
+      if (isLinearized) {
+        // In a Linearized PDF, the first 2 startxref sections are the baseline single generation.
+        // Any startxref beyond 2 represents post-issuance incremental saves.
+        if (startXrefMatches.length > 2) {
+          trueGenerationCount = 1 + (startXrefMatches.length - 2);
+          hasIncrementalTamper = true;
+        } else {
+          trueGenerationCount = 1;
+          hasIncrementalTamper = false;
+        }
+      } else {
+        // Standard non-linearized PDF: each valid startxref block represents an incremental save
+        trueGenerationCount = startXrefMatches.length;
+        hasIncrementalTamper = true;
+      }
+    } else if (prevMatches.isNotEmpty && !isLinearized) {
+      // In case startxref was obscured or repaired, check /Prev pointers
+      trueGenerationCount = math.max(1, prevMatches.length + 1);
+      hasIncrementalTamper = true;
+    } else if (distinctRawEofs.length > 1 && !isLinearized && startXrefMatches.isEmpty) {
+      // Fallback for raw EOFs without startxref
+      trueGenerationCount = distinctRawEofs.length;
+      hasIncrementalTamper = true;
+    } else {
+      trueGenerationCount = 1;
+      hasIncrementalTamper = false;
+    }
+
+    // 5. Trailing Payload Validation (past genuine final %%EOF)
+    bool hasTrailing = false;
+    int trailingBytes = 0;
+    int firstRevisionEnd = eofBoundaries.isNotEmpty ? eofBoundaries.first : 0;
+
+    if (eofBoundaries.isNotEmpty) {
+      final lastEofEnd = eofBoundaries.last;
+      if (lastEofEnd < bytes.length) {
+        final remainingBytes = bytes.sublist(lastEofEnd);
+        final nonWhitespace = remainingBytes.where((b) => b != 10 && b != 13 && b != 32 && b != 0).length;
+        final remainingStr = rawAscii.substring(lastEofEnd).trim();
+        final isHarmlessExtraEofOrComment = remainingStr.replaceAll(RegExp(r'[\r\n\s%EOF]'), '').isEmpty;
+
+        if (nonWhitespace > 16 && !isHarmlessExtraEofOrComment) {
+          hasTrailing = true;
+          trailingBytes = remainingBytes.length;
+        }
+      }
+    }
+
+    // 6. Build Individual Per-Revision Records
+    final revisionRecords = <_PdfRevisionRecord>[];
+    if (startXrefMatches.isNotEmpty) {
+      int prevEnd = 0;
+      int revIndex = 1;
+
+      for (int i = 0; i < startXrefMatches.length; i++) {
+        // In a linearized PDF without edits, combine the 2 baseline sections into Revision 1
+        if (isLinearized && i == 0 && startXrefMatches.length == 2) {
+          continue; // Combine into the second match as Revision 1
+        }
+
+        final m = startXrefMatches[i];
+        final sliceEnd = m.end;
+        final sliceText = rawAscii.substring(prevEnd, sliceEnd);
+        final startXrefVal = int.tryParse(m.group(1)!) ?? 0;
+
+        final prevMatch = prevPattern.firstMatch(sliceText);
+        final prevVal = prevMatch != null ? int.tryParse(prevMatch.group(1)!) : null;
+
+        final prodMatch = RegExp(r'/Producer\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(sliceText);
+        final creatMatch = RegExp(r'/Creator\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(sliceText);
+        final modMatch = RegExp(r'/ModDate\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(sliceText);
+        final creationMatch = RegExp(r'/CreationDate\s*(?:\(([^)]*)\)|<([a-fA-F0-9]+)>)').firstMatch(sliceText);
+
+        final sliceProducer = _extractPdfString(prodMatch);
+        final sliceCreator = _extractPdfString(creatMatch);
+        final sliceModDate = _parsePdfDate(_extractPdfString(modMatch));
+        final sliceCreationDate = _parsePdfDate(_extractPdfString(creationMatch));
+
+        final sliceTools = <String>[];
+        for (final entry in suspiciousEditorSignatures.entries) {
+          if (sliceText.contains(entry.key)) {
+            sliceTools.add(entry.value);
+          }
+        }
+
+        final isTamper = revIndex > 1;
+
+        revisionRecords.add(_PdfRevisionRecord(
+          revisionIndex: revIndex,
+          startOffset: prevEnd,
+          endOffset: sliceEnd,
+          startXrefOffset: startXrefVal,
+          prevXrefOffset: prevVal,
+          producer: sliceProducer,
+          creator: sliceCreator,
+          timestamp: isTamper ? (sliceModDate ?? sliceCreationDate) : (sliceCreationDate ?? sliceModDate),
+          detectedTools: sliceTools,
+          isTamperOrAppended: isTamper,
+        ));
+
+        prevEnd = sliceEnd;
+        revIndex++;
+      }
+    }
+
+    return _PdfRevisionAnalysis(
+      trueGenerationCount: trueGenerationCount,
+      isLinearized: isLinearized,
+      revisions: revisionRecords,
+      hasIncrementalTamper: hasIncrementalTamper,
+      prevPointerCount: prevMatches.length,
+      hasTrailingPayload: hasTrailing,
+      trailingBytes: trailingBytes,
+      firstRevisionEnd: firstRevisionEnd,
     );
   }
 
@@ -1564,14 +1726,13 @@ class DocumentForensicService {
   /// FEATURE 4: Incremental PDF Text Stream Diff Extractor
   static PdfRevisionDiff? _extractPdfStreamDiff(
     Uint8List bytes,
-    List<Match> eofMatches,
+    int firstRevisionEnd,
     String rawAscii,
   ) {
-    if (eofMatches.length < 2) return null;
+    if (firstRevisionEnd <= 0 || firstRevisionEnd >= rawAscii.length) return null;
 
-    final firstEofIndex = eofMatches.first.end;
-    final rev1Part = rawAscii.substring(0, firstEofIndex);
-    final rev2Part = rawAscii.substring(firstEofIndex);
+    final rev1Part = rawAscii.substring(0, firstRevisionEnd);
+    final rev2Part = rawAscii.substring(firstRevisionEnd);
 
     // 1. Currency & exact monetary figures diff
     final currencyRegex = RegExp(r'\$\s*[\d,]+(?:\.\d{2})?');
@@ -1978,3 +2139,52 @@ class _InternalForensicAnalysis {
     this.textForensics,
   });
 }
+
+class _PdfRevisionRecord {
+  final int revisionIndex;
+  final int startOffset;
+  final int endOffset;
+  final int startXrefOffset;
+  final int? prevXrefOffset;
+  final String? producer;
+  final String? creator;
+  final DateTime? timestamp;
+  final List<String> detectedTools;
+  final bool isTamperOrAppended;
+
+  const _PdfRevisionRecord({
+    required this.revisionIndex,
+    required this.startOffset,
+    required this.endOffset,
+    required this.startXrefOffset,
+    this.prevXrefOffset,
+    this.producer,
+    this.creator,
+    this.timestamp,
+    this.detectedTools = const [],
+    this.isTamperOrAppended = false,
+  });
+}
+
+class _PdfRevisionAnalysis {
+  final int trueGenerationCount;
+  final bool isLinearized;
+  final List<_PdfRevisionRecord> revisions;
+  final bool hasIncrementalTamper;
+  final int prevPointerCount;
+  final bool hasTrailingPayload;
+  final int trailingBytes;
+  final int firstRevisionEnd;
+
+  const _PdfRevisionAnalysis({
+    required this.trueGenerationCount,
+    required this.isLinearized,
+    required this.revisions,
+    required this.hasIncrementalTamper,
+    required this.prevPointerCount,
+    required this.hasTrailingPayload,
+    required this.trailingBytes,
+    required this.firstRevisionEnd,
+  });
+}
+

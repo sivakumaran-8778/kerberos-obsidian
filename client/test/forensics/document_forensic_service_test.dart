@@ -727,4 +727,219 @@ startxref
       expect(report.anomalies.any((a) => a.title.contains('Chronological Inversion')), isTrue);
     });
   });
+
+  group('Accurate PDF Revision & Generation Count (ISO 32000-1)', () {
+    test('Accurately counts single generation when literal %%EOF occurs inside stream', () {
+      final pdfWithEmbeddedEofStream = '''
+%PDF-1.5
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Page /Contents 3 0 R >>
+endobj
+3 0 obj
+<< /Length 45 >>
+stream
+BT /F1 12 Tf (Hello World with %%EOF inside stream) ET
+endstream
+endobj
+xref
+0 4
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+trailer
+<< /Size 4 /Root 1 0 R >>
+startxref
+220
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(pdfWithEmbeddedEofStream)),
+        fileName: 'single_gen_stream_eof.pdf',
+      );
+
+      expect(report.revisionCount, equals(1));
+      expect(report.history.length, equals(1));
+      expect(report.isTampered, isFalse);
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+    });
+
+    test('Linearized PDF (Fast Web View) reports 1 generation without false tampering flag', () {
+      final linearizedPdf = '''
+%PDF-1.6
+%âãÏÓ
+1 0 obj
+<< /Linearized 1 /L 25600 /H [ 800 200 ] /O 4 /E 12000 /N 1 /T 24000 >>
+endobj
+2 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+1 2
+0000000050 00000 n 
+0000000150 00000 n 
+trailer
+<< /Size 3 /Root 2 0 R >>
+startxref
+250
+%%EOF
+3 0 obj
+<< /Type /Pages /Kids [ 4 0 R ] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 3 0 R >>
+endobj
+xref
+3 2
+0000000400 00000 n 
+0000000550 00000 n 
+trailer
+<< /Size 5 /Prev 250 /Root 2 0 R >>
+startxref
+700
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(linearizedPdf)),
+        fileName: 'fast_web_view_linearized.pdf',
+      );
+
+      expect(report.revisionCount, equals(1));
+      expect(report.history.length, equals(1));
+      expect(report.isTampered, isFalse);
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+      expect(report.anomalies.any((a) => a.title.contains('Incremental Revision')), isFalse);
+    });
+
+    test('Linearized PDF with post-linearization appended edit reports 2 generations and detects tamper', () {
+      final linearizedEditedPdf = '''
+%PDF-1.6
+1 0 obj
+<< /Linearized 1 /L 25600 /H [ 800 200 ] /O 4 /E 12000 /N 1 /T 24000 >>
+endobj
+2 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+1 2
+trailer
+<< /Size 3 /Root 2 0 R >>
+startxref
+250
+%%EOF
+3 0 obj
+<< /Type /Pages /Kids [ 4 0 R ] /Count 1 >>
+endobj
+xref
+3 1
+trailer
+<< /Size 4 /Prev 250 /Root 2 0 R >>
+startxref
+500
+%%EOF
+5 0 obj
+<< /Type /Page /Contents (Appended unauthorized modification) >>
+endobj
+xref
+5 1
+trailer
+<< /Size 6 /Prev 500 /Root 2 0 R >>
+startxref
+750
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(linearizedEditedPdf)),
+        fileName: 'linearized_with_injected_edit.pdf',
+      );
+
+      expect(report.revisionCount, equals(2));
+      expect(report.isTampered, isTrue);
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.anomalies.any((a) => a.title.contains('Incremental Revision Tampering')), isTrue);
+    });
+
+    test('Accurately tracks 3 generations with distinct per-revision tools and metadata', () {
+      final threeGenPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Contract Agreement) /Producer (Acrobat Distiller 11.0) /CreationDate (D:20240101100000Z) >>
+endobj
+xref
+0 2
+trailer
+<< /Size 2 /Root 1 0 R >>
+startxref
+150
+%%EOF
+2 0 obj
+<< /Title (Contract Agreement - Rev 1) /Producer (Adobe Photoshop CC 2023) /ModDate (D:20240102120000Z) >>
+endobj
+xref
+2 1
+trailer
+<< /Size 3 /Prev 150 /Root 1 0 R >>
+startxref
+350
+%%EOF
+3 0 obj
+<< /Title (Contract Agreement - Rev 2) /Producer (LibreOffice 7.5) /ModDate (D:20240103140000Z) >>
+endobj
+xref
+3 1
+trailer
+<< /Size 4 /Prev 350 /Root 1 0 R >>
+startxref
+550
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(threeGenPdf)),
+        fileName: 'three_generation_audit.pdf',
+      );
+
+      expect(report.revisionCount, equals(3));
+      expect(report.history.length, equals(3));
+      expect(report.history[0].revisionIndex, equals(1));
+      expect(report.history[0].softwareOrProducer, contains('Acrobat Distiller'));
+      expect(report.history[1].revisionIndex, equals(2));
+      expect(report.history[1].softwareOrProducer, contains('Adobe Photoshop'));
+      expect(report.history[2].revisionIndex, equals(3));
+      expect(report.history[2].softwareOrProducer, contains('LibreOffice'));
+      expect(report.isTampered, isTrue);
+    });
+
+    test('Accurately handles duplicate consecutive %%EOF tokens at end without false generation increment', () {
+      final duplicateEofPdf = '''
+%PDF-1.4
+1 0 obj
+<< /Title (Standard Single Rev) /Producer (Word to PDF) >>
+endobj
+xref
+0 2
+trailer
+<< /Size 2 /Root 1 0 R >>
+startxref
+150
+%%EOF
+
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(duplicateEofPdf)),
+        fileName: 'duplicate_eof_file.pdf',
+      );
+
+      expect(report.revisionCount, equals(1));
+      expect(report.history.length, equals(1));
+      expect(report.isTampered, isFalse);
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+      // Ensure no trailing payload flag for harmless duplicate EOF
+      expect(report.anomalies.any((a) => a.title.contains('Trailing Injected Payload')), isFalse);
+    });
+  });
 }
+
