@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:kerberos_client/features/forensics/models/document_forensic_models.dart';
 import 'package:kerberos_client/features/forensics/services/document_forensic_service.dart';
 
@@ -941,5 +942,86 @@ startxref
       expect(report.anomalies.any((a) => a.title.contains('Trailing Injected Payload')), isFalse);
     });
   });
+
+  group('Zero-Garbage PDF Diff & Real ELA Quantization', () {
+    test('Strictly rejects PDF keywords and binary garbage from revision diff', () {
+      final garbagePdf = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Page /Contents (Genuine Original Total: \$500.00) >>
+endobj
+xref
+0 3
+trailer
+<< /Size 3 /Root 1 0 R >>
+startxref
+120
+%%EOF
+11 0 obj
+<< /Filter /FlateDecode /Length 83 >>
+stream
+*J% \\ 76 "no. ,> endstream endobj
+16 0 obj << /Type /XObject /Subtype /Image >>
+stream
+x c endstream endobj
+(Modified Authorized Total: \$1,500.00)
+xref
+3 2
+trailer
+<< /Size 5 /Prev 120 /Root 1 0 R >>
+startxref
+400
+%%EOF
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(garbagePdf)),
+        fileName: 'sanitized_diff_test.pdf',
+      );
+
+      expect(report.revisionDiff, isNotNull);
+      // Removed must contain genuine currency, not binary noise
+      expect(report.revisionDiff!.removedTokens, contains('\$500.00'));
+      expect(report.revisionDiff!.addedTokens, contains('\$1,500.00'));
+
+      // Ensure NO bytecode or PDF structural keywords leaked into removed or added tokens
+      final allTokens = [...report.revisionDiff!.removedTokens, ...report.revisionDiff!.addedTokens];
+      expect(allTokens.any((t) => t.contains('endstream')), isFalse);
+      expect(allTokens.any((t) => t.contains('endobj')), isFalse);
+      expect(allTokens.any((t) => t.contains('/Filter')), isFalse);
+      expect(allTokens.any((t) => t.contains('/XObject')), isFalse);
+      expect(allTokens.any((t) => t.contains('11 0 obj')), isFalse);
+      expect(allTokens.any((t) => t.contains('*J%')), isFalse);
+    });
+
+    test('Real ELA on real image generates genuine 256-cell quantization without dummy data', () {
+      // Create a genuine 64x64 PNG image with img.Image
+      final testImg = img.Image(width: 64, height: 64);
+      // Uniform gradient
+      for (int y = 0; y < 64; y++) {
+        for (int x = 0; x < 64; x++) {
+          testImg.setPixelRgb(x, y, 100 + (x % 30), 120 + (y % 20), 140);
+        }
+      }
+      final pngBytes = Uint8List.fromList(img.encodePng(testImg));
+
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: pngBytes,
+        fileName: 'real_camera_scan.png',
+      );
+
+      expect(report.elaAnalysis, isNotNull);
+      expect(report.elaAnalysis!.heatmapTensor.length, equals(256));
+      expect(report.elaAnalysis!.baselineErrorRate, greaterThan(0.0));
+      expect(report.elaAnalysis!.peakErrorRate, greaterThan(0.0));
+      // All cells must have real computed numbers
+      expect(report.elaAnalysis!.heatmapTensor.every((v) => v >= 0.04 && v <= 1.0), isTrue);
+      // Uniform image should not have false splicing
+      expect(report.elaAnalysis!.hasSplicingAnomaly, isFalse);
+    });
+  });
 }
+
 

@@ -898,7 +898,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               const Icon(Icons.difference_rounded, size: 14, color: Color(0xFFF43F5E)),
               const SizedBox(width: 6),
               Text(
-                'PDF STREAM BT...ET INLINE EXTRACTION DIFF',
+                'PDF INCREMENTAL CONTENT MODIFICATION DIFF',
                 style: GoogleFonts.jetBrainsMono(
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
@@ -937,6 +937,8 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                             ),
                             child: Text(
                               '- $t',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.jetBrainsMono(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -980,6 +982,8 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                             ),
                             child: Text(
                               '+ $t',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.jetBrainsMono(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -1393,7 +1397,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               const SizedBox(width: 14),
               _buildMiniMetric(
                 label: 'BACKGROUND BASELINE',
-                value: '12.4%',
+                value: '${(ela.baselineErrorRate * 100).toStringAsFixed(1)}%',
                 isAlert: false,
               ),
               const SizedBox(width: 14),

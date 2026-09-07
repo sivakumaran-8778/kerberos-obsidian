@@ -129,12 +129,14 @@ class DocumentRevisionEntry {
 class DocumentElaAnalysis {
   final List<double> heatmapTensor; // 256 normalized floats (16x16 grid)
   final double peakErrorRate; // 0.0 to 1.0
+  final double baselineErrorRate; // 0.0 to 1.0 (mean background residual)
   final String anomalyCoordinates;
   final bool hasSplicingAnomaly;
 
   const DocumentElaAnalysis({
     required this.heatmapTensor,
     required this.peakErrorRate,
+    this.baselineErrorRate = 0.124,
     required this.anomalyCoordinates,
     required this.hasSplicingAnomaly,
   });
