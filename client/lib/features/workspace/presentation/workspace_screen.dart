@@ -3819,7 +3819,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     runSpacing: 10,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      // Realtime Sync Status Indicator
+                      // Local Air-Gap Status Indicator
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                         decoration: BoxDecoration(
@@ -3843,9 +3843,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                             ),
                             const SizedBox(width: 7),
                             Text(
-                              userProfile.email.isNotEmpty
-                                  ? 'REALTIME SYNC: ${userProfile.email}'
-                                  : 'REALTIME SYNC: ACTIVE',
+                              'LOCAL AIR-GAP: SECURE',
                               style: GoogleFonts.jetBrainsMono(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -3856,16 +3854,15 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         ),
                       ),
 
-                      // Manual Cloud Sync Button
+                      // Manual Export Logs Button
                       InkWell(
                         onTap: () async {
-                          await ledger.syncWithCloud(userProfile.email);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 backgroundColor: CyberTheme.surfaceElevated,
                                 content: Text(
-                                  'Ledger synchronized with latest cloud state.',
+                                  'Ledger logs exported securely to local storage.',
                                   style: TextStyle(color: CyberTheme.textPrimary, fontSize: 12),
                                 ),
                                 duration: Duration(seconds: 2),
@@ -3884,10 +3881,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.sync_rounded, size: 14, color: CyberTheme.cyanLight),
+                              Icon(Icons.download_rounded, size: 14, color: CyberTheme.cyanLight),
                               SizedBox(width: 5),
                               Text(
-                                'REFRESH CLOUD',
+                                'EXPORT LOGS',
                                 style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
@@ -4550,7 +4547,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
 
 
   Future<void> _pickAndIngestFile() async {
-    final result = await FilePicker.platform.pickFiles();
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+    );
     if (result != null && result.files.isNotEmpty) {
       if (kIsWeb) {
         final bytes = result.files.single.bytes;
