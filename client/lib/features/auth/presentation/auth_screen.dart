@@ -385,6 +385,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 500;
+
     return Scaffold(
       backgroundColor: CyberTheme.background,
       body: Stack(
@@ -397,7 +400,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           // 2. Central Industrial-Grade Auth Glass Container
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
+              padding: EdgeInsets.symmetric(vertical: isMobile ? 24 : 48, horizontal: isMobile ? 12 : 20),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: Container(
@@ -423,7 +426,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 40),
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 20 : 36, vertical: isMobile ? 28 : 40),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -712,8 +715,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             // Forgot Password Link on Sign In
                             if (_mode == AuthMode.signIn) ...[
                               const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 6,
                                 children: [
                                   TextButton(
                                     onPressed: () => _switchMode(AuthMode.verifyOtp),
@@ -824,8 +830,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 6,
                                 children: [
                                   TextButton.icon(
                                     onPressed: _isLoading ? null : _resendSignupCode,

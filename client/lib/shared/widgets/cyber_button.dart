@@ -171,14 +171,17 @@ class _CyberButtonState extends State<CyberButton> {
                     ),
                     const SizedBox(width: 8),
                   ],
-                  DefaultTextStyle(
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
+                  Flexible(
+                    child: DefaultTextStyle(
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      child: widget.child,
                     ),
-                    child: widget.child,
                   ),
                 ],
               ),

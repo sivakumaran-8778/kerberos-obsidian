@@ -88,99 +88,127 @@ class _MentimeterPeerMeshState extends State<MentimeterPeerMesh> with SingleTick
   // 1. MESH HEADER & NODE COUNTER
   // ==========================================
   Widget _buildMeshHeader(int totalNodes) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: BoxDecoration(
-        color: const Color(0x14FFFFFF),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0x28FFFFFF), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: CyberTheme.accentColor.withValues(alpha: 0.14),
-            blurRadius: 24,
-            spreadRadius: -4,
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Glowing Pulse Dot
-          Container(
-            width: 14,
-            height: 14,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF10B981),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.8),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 14),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 650;
 
-          // Discovered Node Counter
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        final pulseDot = Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFF10B981),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF10B981).withValues(alpha: 0.8),
+                blurRadius: 12,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        );
+
+        final counterWrap = Wrap(
+          spacing: 10,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              '$totalNodes ${totalNodes == 1 ? "NODE" : "NODES"} DISCOVERED IN SECURE MESH',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: isNarrow ? 12.5 : 14.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+                color: Colors.white,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0x2234D399),
+                borderRadius: BorderRadius.circular(100),
+                border: Border.all(color: const Color(0x5034D399)),
+              ),
+              child: Text(
+                'AIRDROP ACTIVE',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF34D399),
+                ),
+              ),
+            ),
+          ],
+        );
+
+        final subtitle = Text(
+          'Mentimeter-Style Enclave Mesh • Click any node to establish an encrypted P2P channel',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: isNarrow ? 10.5 : 11.5,
+            color: CyberTheme.textSecondary,
+          ),
+        );
+
+        final rescanButton = CyberButton(
+          variant: CyberButtonVariant.glassPill,
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          icon: Icons.radar,
+          onTap: widget.onRefresh,
+          child: const Text('Rescan'),
+        );
+
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: isNarrow ? 16 : 24, vertical: isNarrow ? 12 : 16),
+          decoration: BoxDecoration(
+            color: const Color(0x14FFFFFF),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0x28FFFFFF), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: CyberTheme.accentColor.withValues(alpha: 0.14),
+                blurRadius: 24,
+                spreadRadius: -4,
+              ),
+            ],
+          ),
+          child: isNarrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '$totalNodes ${totalNodes == 1 ? "NODE" : "NODES"} DISCOVERED IN SECURE MESH',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
-                        color: Colors.white,
+                    Row(
+                      children: [
+                        pulseDot,
+                        const SizedBox(width: 10),
+                        Expanded(child: counterWrap),
+                        const SizedBox(width: 8),
+                        rescanButton,
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    subtitle,
+                  ],
+                )
+              : Row(
+                  children: [
+                    pulseDot,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          counterWrap,
+                          const SizedBox(height: 3),
+                          subtitle,
+                        ],
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0x2234D399),
-                        borderRadius: BorderRadius.circular(100),
-                        border: Border.all(color: const Color(0x5034D399)),
-                      ),
-                      child: Text(
-                        'AIRDROP ACTIVE',
-                        style: GoogleFonts.jetBrainsMono(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF34D399),
-                        ),
-                      ),
-                    ),
+                    rescanButton,
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  'Mentimeter-Style Enclave Mesh • Click any node to establish an encrypted P2P channel',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11.5,
-                    color: CyberTheme.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // Rescan Button
-          CyberButton(
-            variant: CyberButtonVariant.glassPill,
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            icon: Icons.radar,
-            onTap: widget.onRefresh,
-            child: const Text('Rescan Mesh'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

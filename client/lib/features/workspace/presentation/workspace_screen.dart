@@ -916,6 +916,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 640;
+    final isDesktopNav = screenWidth >= 860;
     final isFullscreenChat = isMobile &&
         sessionService.sessionState == P2PSessionState.connected &&
         _activeModal == ActiveDeckModal.radar;
@@ -951,7 +952,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1200),
-                        child: _buildFloatingNavbar(userProfile),
+                        child: _buildFloatingNavbar(userProfile, isDesktopNav: isDesktopNav),
                       ),
                     ),
                   ),
@@ -973,84 +974,107 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
 
                 // Dedicated Screens (Instant non-sliding transition, Navbar indicator slides smoothly)
                 Expanded(
-                  child: IndexedStack(
-                    index: _currentActivePageIndex,
-                    children: [
-                      // Page 0: Home Page
-                      _buildHomePage(),
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom: (!isDesktopNav && !isFullscreenChat) ? 68.0 : 0.0,
+                    ),
+                    child: IndexedStack(
+                      index: _currentActivePageIndex,
+                      children: [
+                        // Page 0: Home Page
+                        _buildHomePage(isMobile: isMobile),
 
-                      // Page 1: Studio Page
-                      _buildPageLayout(
-                        title: 'PROVENANCE STUDIO',
-                        icon: Icons.fingerprint,
-                        badge: 'C2PA SEED & HARDWARE MANIFEST',
-                        description:
-                            'Ingest digital originals, bind immutable C2PA hardware manifests, and extract perceptual cryptographic hash matrices.',
-                        child: _buildProvenanceStudio(provenanceState),
-                      ),
+                        // Page 1: Studio Page
+                        _buildPageLayout(
+                          title: 'PROVENANCE STUDIO',
+                          icon: Icons.fingerprint,
+                          badge: 'C2PA SEED & HARDWARE MANIFEST',
+                          description:
+                              'Ingest digital originals, bind immutable C2PA hardware manifests, and extract perceptual cryptographic hash matrices.',
+                          isMobile: isMobile,
+                          child: _buildProvenanceStudio(provenanceState),
+                        ),
 
-                      // Page 2: Verification Page
-                      _buildPageLayout(
-                        title: 'ZERO-TRUST FORENSIC VERIFICATION',
-                        icon: Icons.verified_user_rounded,
-                        badge: 'BITSTREAM / C2PA / STEGANOGRAPHY / LEDGER',
-                        description:
-                            'Cryptographic forensic validation protocol: Bitstream SHA-256 parity, C2PA JUMBF Manifest Envelope, Neural Perceptual Drift, and Immutable Ledger Anchors.',
-                        child: const VerificationPage(),
-                      ),
+                        // Page 2: Verification Page
+                        _buildPageLayout(
+                          title: 'ZERO-TRUST FORENSIC VERIFICATION',
+                          icon: Icons.verified_user_rounded,
+                          badge: 'BITSTREAM / C2PA / STEGANOGRAPHY / LEDGER',
+                          description:
+                              'Cryptographic forensic validation protocol: Bitstream SHA-256 parity, C2PA JUMBF Manifest Envelope, Neural Perceptual Drift, and Immutable Ledger Anchors.',
+                          isMobile: isMobile,
+                          child: const VerificationPage(),
+                        ),
 
-                      // Page 3: Next-Gen Enclave Radar (Mentimeter Orbital Mesh + P2P Chat + Inline Sealing)
-                      Padding(
-                        padding: isFullscreenChat
-                            ? EdgeInsets.zero
-                            : EdgeInsets.fromLTRB(
-                                isMobile ? 8 : 28,
-                                isMobile ? 2 : 4,
-                                isMobile ? 8 : 28,
-                                isMobile ? 8 : 16,
-                              ),
-                        child: isFullscreenChat
-                            ? RadarPage(
-                                onNavigateToTab: (tabIndex) => _navigateToPage(tabIndex),
-                              )
-                            : Center(
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 1400),
-                                  child: RadarPage(
-                                    onNavigateToTab: (tabIndex) => _navigateToPage(tabIndex),
+                        // Page 3: Next-Gen Enclave Radar (Mentimeter Orbital Mesh + P2P Chat + Inline Sealing)
+                        Padding(
+                          padding: isFullscreenChat
+                              ? EdgeInsets.zero
+                              : EdgeInsets.fromLTRB(
+                                  isMobile ? 8 : 28,
+                                  isMobile ? 2 : 4,
+                                  isMobile ? 8 : 28,
+                                  isMobile ? 8 : 16,
+                                ),
+                          child: isFullscreenChat
+                              ? RadarPage(
+                                  onNavigateToTab: (tabIndex) => _navigateToPage(tabIndex),
+                                )
+                              : Center(
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 1400),
+                                    child: RadarPage(
+                                      onNavigateToTab: (tabIndex) => _navigateToPage(tabIndex),
+                                    ),
                                   ),
                                 ),
-                              ),
-                      ),
+                        ),
 
-                      // Page 4: Ledger Page
-                      _buildPageLayout(
-                        title: 'IMMUTABLE ZERO-TRUST LEDGER',
-                        icon: Icons.lock_clock,
-                        badge: 'CRYPTOGRAPHIC AUDIT TRAIL',
-                        description:
-                            'Cryptographic tamper-evident provenance block history, verifying asset signature validity, perceptual hashes, and peer transmission logs.',
-                        child: _buildFullPageLedger(),
-                      ),
+                        // Page 4: Ledger Page
+                        _buildPageLayout(
+                          title: 'IMMUTABLE ZERO-TRUST LEDGER',
+                          icon: Icons.lock_clock,
+                          badge: 'CRYPTOGRAPHIC AUDIT TRAIL',
+                          description:
+                              'Cryptographic tamper-evident provenance block history, verifying asset signature validity, perceptual hashes, and peer transmission logs.',
+                          isMobile: isMobile,
+                          child: _buildFullPageLedger(),
+                        ),
 
-                      // Page 5: Document Integrity & Forensics (Unsealed Blind Tamper Detection)
-                      _buildPageLayout(
-                        title: 'DOCUMENT INTEGRITY & FORENSICS',
-                        icon: Icons.document_scanner_rounded,
-                        badge: 'UNSEALED BLIND TAMPER INSPECTION',
-                        description:
-                            'Deep binary inspection for government IDs, medical bills, invoices, and digital files. Detects incremental revisions, editing software footprints, and bitstream scrambling.',
-                        child: const DocumentForensicsScreen(),
-                      ),
+                        // Page 5: Document Integrity & Forensics (Unsealed Blind Tamper Detection)
+                        _buildPageLayout(
+                          title: 'DOCUMENT INTEGRITY & FORENSICS',
+                          icon: Icons.document_scanner_rounded,
+                          badge: 'UNSEALED BLIND TAMPER INSPECTION',
+                          description:
+                              'Deep binary inspection for government IDs, medical bills, invoices, and digital files. Detects incremental revisions, editing software footprints, and bitstream scrambling.',
+                          isMobile: isMobile,
+                          child: const DocumentForensicsScreen(),
+                        ),
 
-                      // Page 6: Dedicated User Profile Page
-                      _buildUserProfilePage(userProfile),
-                    ],
+                        // Page 6: Dedicated User Profile Page
+                        _buildUserProfilePage(userProfile),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+
+          // 3. Floating Mobile Bottom Glass Dock (Thumb-friendly navigation on screens < 860px)
+          if (!isDesktopNav && !isFullscreenChat)
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: MediaQuery.of(context).padding.bottom + 10,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: _buildMobileBottomNavDock(),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1243,7 +1267,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   // ==========================================
   // FLOATING GLASS NAVBAR (AESTHETIC CAPSULE)
   // ==========================================
-  Widget _buildFloatingNavbar(UserProfile profile) {
+  Widget _buildFloatingNavbar(UserProfile profile, {bool isDesktopNav = true}) {
     return Container(
       decoration: BoxDecoration(
         // Premium White Frosted Transparency Sheen
@@ -1271,7 +1295,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktopNav ? 18 : 12,
+              vertical: 7,
+            ),
             child: Row(
               children: [
                 // Left: Logo & Brand (Obsidian Protocol)
@@ -1301,44 +1328,145 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                       Text(
                         'Obsidian Protocol',
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
+                          fontSize: isDesktopNav ? 15 : 13.5,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.2,
                           color: CyberTheme.textPrimary,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                        decoration: BoxDecoration(
-                          color: CyberTheme.accentColor.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(100),
-                          border: Border.all(color: CyberTheme.borderAccent),
-                        ),
-                        child: Text(
-                          'ZERO-TRUST',
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.8,
-                            color: const Color(0xFFC084FC),
+                      if (isDesktopNav) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: CyberTheme.accentColor.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(100),
+                            border: Border.all(color: CyberTheme.borderAccent),
+                          ),
+                          child: Text(
+                            'ZERO-TRUST',
+                            style: GoogleFonts.jetBrainsMono(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.8,
+                              color: const Color(0xFFC084FC),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
 
-                // Center: Animated Sliding Navigation Segmented Control
-                Expanded(
-                  child: Center(
-                    child: _buildNavSegmentedControl(),
+                if (isDesktopNav) ...[
+                  // Center: Animated Sliding Navigation Segmented Control
+                  Expanded(
+                    child: Center(
+                      child: _buildNavSegmentedControl(),
+                    ),
                   ),
-                ),
+                ] else ...[
+                  const Spacer(),
+                ],
 
                 // Right: Combined Unified User Profile Capsule & Sign Out Menu
                 _buildNavbarProfileCapsule(profile),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // MOBILE FLOATING BOTTOM NAV DOCK
+  // ==========================================
+  Widget _buildMobileBottomNavDock() {
+    final activeIndex = _activeNavIndex; // 0..5 or -1
+
+    final tabs = [
+      (index: 0, title: 'Home', icon: Icons.home_rounded),
+      (index: 1, title: 'Studio', icon: Icons.fingerprint_rounded),
+      (index: 2, title: 'Verify', icon: Icons.verified_user_rounded),
+      (index: 3, title: 'Radar', icon: Icons.radar_rounded),
+      (index: 4, title: 'Ledger', icon: Icons.lock_clock_rounded),
+      (index: 5, title: 'Forensics', icon: Icons.document_scanner_rounded),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xE8120B24),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(
+          color: const Color(0x38FFFFFF),
+          width: 1.0,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x80000000),
+            blurRadius: 28,
+            offset: Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Color(0x30C084FC),
+            blurRadius: 16,
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(100),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: tabs.map((tab) {
+                final isActive = activeIndex == tab.index;
+                return InkWell(
+                  onTap: () => _navigateToPage(tab.index),
+                  borderRadius: BorderRadius.circular(100),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isActive ? 12 : 8,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isActive ? const Color(0x33C084FC) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(100),
+                      border: isActive
+                          ? Border.all(color: const Color(0x70C084FC), width: 1)
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          tab.icon,
+                          size: 18,
+                          color: isActive ? const Color(0xFFC084FC) : const Color(0x99FFFFFF),
+                        ),
+                        if (isActive) ...[
+                          const SizedBox(width: 5),
+                          Text(
+                            tab.title,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -1476,97 +1604,165 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   // FLOATING INCOMING TRANSFER ALERT BANNER
   // ==========================================
   Widget _buildIncomingTransferBanner(IncomingTransferRequest request) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: CyberTheme.surfaceElevated.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: CyberTheme.emerald, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: CyberTheme.emerald.withValues(alpha: 0.3),
-            blurRadius: 20,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: CyberTheme.emerald.withValues(alpha: 0.2),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 620;
+
+        final bannerContent = Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: CyberTheme.emerald.withValues(alpha: 0.2),
+              ),
+              child: const Icon(Icons.wifi_tethering, color: CyberTheme.emerald, size: 20),
             ),
-            child: const Icon(Icons.wifi_tethering, color: CyberTheme.emerald, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'INCOMING AIRDROP REQUEST',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: CyberTheme.emerald,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'INCOMING AIRDROP REQUEST',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: CyberTheme.emerald,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Agent ${request.senderName} (${request.senderEmail.isNotEmpty ? request.senderEmail : request.senderId}) wants to stream an encrypted asset.',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: CyberTheme.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(height: 2),
+                  Text(
+                    'Agent ${request.senderName} (${request.senderEmail.isNotEmpty ? request.senderEmail : request.senderId}) wants to stream an encrypted asset.',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: CyberTheme.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+          ],
+        );
+
+        final actionButtons = Row(
+          mainAxisSize: isNarrow ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            if (isNarrow) ...[
+              Expanded(
+                child: CyberButton(
+                  variant: CyberButtonVariant.danger,
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  onTap: () {
+                    ref.read(webRtcServiceProvider).declineIncomingTransfer(request.senderId);
+                    ref.read(incomingTransferNotifierProvider.notifier).clear();
+                  },
+                  child: const Center(child: Text('DECLINE')),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: CyberButton(
+                  variant: CyberButtonVariant.emerald,
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  onTap: () {
+                    final peer = RadarPeer(
+                      uuid: request.senderId,
+                      displayName: request.senderName,
+                      email: request.senderEmail,
+                      platform: 'Mesh Node',
+                      pingMs: 16,
+                    );
+                    ref.read(p2pSessionServiceProvider).handleIncomingSessionAccepted(peer);
+                    ref.read(incomingTransferNotifierProvider.notifier).clear();
+                    _navigateToPage(3);
+                    ref.read(webRtcServiceProvider).acceptIncomingTransfer(request.senderId, request.offerPayload);
+                  },
+                  child: const Center(child: Text('ACCEPT')),
+                ),
+              ),
+            ] else ...[
+              CyberButton(
+                variant: CyberButtonVariant.danger,
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                onTap: () {
+                  ref.read(webRtcServiceProvider).declineIncomingTransfer(request.senderId);
+                  ref.read(incomingTransferNotifierProvider.notifier).clear();
+                },
+                child: const Text('DECLINE'),
+              ),
+              const SizedBox(width: 8),
+              CyberButton(
+                variant: CyberButtonVariant.emerald,
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                onTap: () {
+                  final peer = RadarPeer(
+                    uuid: request.senderId,
+                    displayName: request.senderName,
+                    email: request.senderEmail,
+                    platform: 'Mesh Node',
+                    pingMs: 16,
+                  );
+                  ref.read(p2pSessionServiceProvider).handleIncomingSessionAccepted(peer);
+                  ref.read(incomingTransferNotifierProvider.notifier).clear();
+                  _navigateToPage(3);
+                  ref.read(webRtcServiceProvider).acceptIncomingTransfer(request.senderId, request.offerPayload);
+                },
+                child: const Text('ACCEPT'),
+              ),
+            ],
+          ],
+        );
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          decoration: BoxDecoration(
+            color: CyberTheme.surfaceElevated.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: CyberTheme.emerald, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: CyberTheme.emerald.withValues(alpha: 0.3),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-          const SizedBox(width: 14),
-          CyberButton(
-            variant: CyberButtonVariant.danger,
-            height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            onTap: () {
-              ref.read(webRtcServiceProvider).declineIncomingTransfer(request.senderId);
-              ref.read(incomingTransferNotifierProvider.notifier).clear();
-            },
-            child: const Text('DECLINE'),
-          ),
-          const SizedBox(width: 8),
-          CyberButton(
-            variant: CyberButtonVariant.emerald,
-            height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            onTap: () {
-              final peer = RadarPeer(
-                uuid: request.senderId,
-                displayName: request.senderName,
-                email: request.senderEmail,
-                platform: 'Mesh Node',
-                pingMs: 16,
-              );
-              ref.read(p2pSessionServiceProvider).handleIncomingSessionAccepted(peer);
-              ref.read(incomingTransferNotifierProvider.notifier).clear();
-              _navigateToPage(3);
-              ref.read(webRtcServiceProvider).acceptIncomingTransfer(request.senderId, request.offerPayload);
-            },
-            child: const Text('ACCEPT'),
-          ),
-        ],
-      ),
+          child: isNarrow
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    bannerContent,
+                    const SizedBox(height: 10),
+                    actionButtons,
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: bannerContent),
+                    const SizedBox(width: 14),
+                    actionButtons,
+                  ],
+                ),
+        );
+      },
     );
   }
 
   // ==========================================
   // HERO SECTION (CLEAN LANDING PAGE WITH QUOTE ALONE)
   // ==========================================
-  Widget _buildHeroSection() {
+  // ==========================================
+  // HERO SECTION (CLEAN LANDING PAGE WITH QUOTE ALONE)
+  // ==========================================
+  Widget _buildHeroSection({bool isMobile = false}) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -1575,7 +1771,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
           onTap: () => _navigateToPage(1),
           borderRadius: BorderRadius.circular(100),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14, vertical: 5),
             decoration: BoxDecoration(
               color: const Color(0x33A855F7),
               borderRadius: BorderRadius.circular(100),
@@ -1591,7 +1787,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(100),
@@ -1600,28 +1796,28 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     'NEW',
                     style: GoogleFonts.plusJakartaSans(
                       color: const Color(0xFF0C0814),
-                      fontSize: 9,
+                      fontSize: 8.5,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.6,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Text(
                   'Creative Components // Digital Provenance',
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
+                    fontSize: isMobile ? 10.5 : 12,
                     fontWeight: FontWeight.w600,
                     color: const Color(0xFFF3E8FF),
                   ),
                 ),
-                const SizedBox(width: 6),
-                const Icon(Icons.arrow_forward_ios, size: 9, color: CyberTheme.shardColor),
+                const SizedBox(width: 5),
+                const Icon(Icons.arrow_forward_ios, size: 8, color: CyberTheme.shardColor),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 28), // Generous breathing room between badge and headline
+        SizedBox(height: isMobile ? 18 : 28), // Breathing room between badge and headline
 
         // Bold Crisp Modern Sans Headline with Theme-Highlighted Words
         Text.rich(
@@ -1657,11 +1853,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
           ),
           textAlign: TextAlign.center,
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 44,
+            fontSize: isMobile ? 26 : 44,
             fontWeight: FontWeight.w900,
-            letterSpacing: -1.0,
+            letterSpacing: isMobile ? -0.5 : -1.0,
             color: Colors.white,
-            height: 1.24, // Comfortable line height for airy reading
+            height: isMobile ? 1.28 : 1.24,
             shadows: [
               Shadow(
                 color: CyberTheme.accentColor.withValues(alpha: 0.4),
@@ -1670,7 +1866,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
             ],
           ),
         ),
-        const SizedBox(height: 26), // Generous spacing before subtitle
+        SizedBox(height: isMobile ? 16 : 26),
 
         // Subtitle (Kept as plain uniform text)
         ConstrainedBox(
@@ -1679,23 +1875,25 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
             'Interactive 3D Prismatic Shards protecting true digital originals. Seal assets with C2PA hardware manifests, extract perceptual hash vectors, and stream encrypted payloads directly between peers over WebRTC DTLS tunnels.',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 14.5,
+              fontSize: isMobile ? 12.5 : 14.5,
               fontWeight: FontWeight.w400,
-              height: 1.65, // More legible and spacious
+              height: 1.6,
               color: CyberTheme.textSecondary,
             ),
           ),
         ),
-        const SizedBox(height: 38), // Generous spacing before CTA buttons
+        SizedBox(height: isMobile ? 24 : 38),
 
-        // Hero Action Buttons with Hover Pop Lift & Glow
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        // Hero Action Buttons with Responsive Wrap
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 12,
+          runSpacing: 12,
           children: [
             CyberButton(
               variant: CyberButtonVariant.whitePill,
-              height: 52,
-              padding: const EdgeInsets.symmetric(horizontal: 32),
+              height: isMobile ? 46 : 52,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 22 : 32),
               icon: Icons.upload_file,
               enableHoverPop: true,
               onTap: () => _navigateToPage(1),
@@ -1703,16 +1901,15 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                 'Get started',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w800,
-                  fontSize: 15,
+                  fontSize: isMobile ? 13.5 : 15,
                   letterSpacing: 0.2,
                 ),
               ),
             ),
-            const SizedBox(width: 14),
             CyberButton(
               variant: CyberButtonVariant.glassPill,
-              height: 52,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              height: isMobile ? 46 : 52,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
               icon: Icons.verified_user_rounded,
               enableHoverPop: true,
               onTap: () => _navigateToPage(2),
@@ -1720,16 +1917,15 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                 'Verify & QA Audit',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w700,
-                  fontSize: 15,
+                  fontSize: isMobile ? 13.5 : 15,
                   letterSpacing: 0.2,
                 ),
               ),
             ),
-            const SizedBox(width: 14),
             CyberButton(
               variant: CyberButtonVariant.glassPill,
-              height: 52,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              height: isMobile ? 46 : 52,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
               icon: Icons.radar,
               enableHoverPop: true,
               onTap: () => _navigateToPage(3),
@@ -1737,16 +1933,15 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                 'Launch Radar',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w700,
-                  fontSize: 15,
+                  fontSize: isMobile ? 13.5 : 15,
                   letterSpacing: 0.2,
                 ),
               ),
             ),
-            const SizedBox(width: 14),
             CyberButton(
               variant: CyberButtonVariant.glassPill,
-              height: 52,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              height: isMobile ? 46 : 52,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
               icon: Icons.document_scanner_rounded,
               enableHoverPop: true,
               onTap: () => _navigateToPage(5),
@@ -1754,7 +1949,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                 'Doc Forensics',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w700,
-                  fontSize: 15,
+                  fontSize: isMobile ? 13.5 : 15,
                   letterSpacing: 0.2,
                 ),
               ),
@@ -1768,20 +1963,25 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   // ==========================================
   // DEDICATED FULL PAGES UNDER NAVBAR
   // ==========================================
-  Widget _buildHomePage() {
+  Widget _buildHomePage({bool isMobile = false}) {
     return SingleChildScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.only(left: 24, right: 24, top: 88, bottom: 64),
+      padding: EdgeInsets.only(
+        left: isMobile ? 14 : 24,
+        right: isMobile ? 14 : 24,
+        top: isMobile ? 36 : 88,
+        bottom: isMobile ? 40 : 64,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildHeroSection(),
-              const SizedBox(height: 96), // Airy, elegant vertical breathing room
+              _buildHeroSection(isMobile: isMobile),
+              SizedBox(height: isMobile ? 48 : 96),
               _buildApplicationExplainerSection(),
-              const SizedBox(height: 56),
+              SizedBox(height: isMobile ? 32 : 56),
             ],
           ),
         ),
@@ -2143,19 +2343,25 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
     required String badge,
     required String description,
     required Widget child,
+    bool isMobile = false,
   }) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 32,
+        vertical: isMobile ? 10 : 16,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1600),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Page Header Bar
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                margin: const EdgeInsets.only(bottom: 20),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 14 : 24,
+                  vertical: isMobile ? 12 : 16,
+                ),
+                margin: EdgeInsets.only(bottom: isMobile ? 14 : 20),
                 decoration: BoxDecoration(
                   color: const Color(0x14FFFFFF),
                   borderRadius: BorderRadius.circular(20),
@@ -2169,10 +2375,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   ],
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 42,
-                      height: 42,
+                      width: isMobile ? 36 : 42,
+                      height: isMobile ? 36 : 42,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: CyberTheme.shardGradient,
@@ -2183,25 +2390,27 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                           ),
                         ],
                       ),
-                      child: Icon(icon, color: Colors.white, size: 20),
+                      child: Icon(icon, color: Colors.white, size: isMobile ? 18 : 20),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: isMobile ? 12 : 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
                                 title,
                                 style: GoogleFonts.plusJakartaSans(
                                   color: Colors.white,
-                                  fontSize: 15,
+                                  fontSize: isMobile ? 13.5 : 15,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.5,
                                 ),
                               ),
-                              const SizedBox(width: 10),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                                 decoration: BoxDecoration(
@@ -2213,7 +2422,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                                   badge,
                                   style: GoogleFonts.jetBrainsMono(
                                     color: const Color(0xFFC084FC),
-                                    fontSize: 9,
+                                    fontSize: 8.5,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 0.5,
                                   ),
@@ -2226,49 +2435,17 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                             description,
                             style: GoogleFonts.plusJakartaSans(
                               color: CyberTheme.textSecondary,
-                              fontSize: 12,
+                              fontSize: isMobile ? 11 : 12,
                               height: 1.4,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    // Back to Home Button
-                    InkWell(
-                      onTap: () => _navigateToPage(0),
-                      borderRadius: BorderRadius.circular(100),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: const Color(0x18FFFFFF),
-                          borderRadius: BorderRadius.circular(100),
-                          border: Border.all(color: const Color(0x33FFFFFF)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.arrow_back_rounded, size: 14, color: Colors.white),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Home',
-                              style: GoogleFonts.plusJakartaSans(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
-
-              // Embedded Page Content Card
               child,
-
               const SizedBox(height: 32),
             ],
           ),
@@ -2276,8 +2453,6 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
       ),
     );
   }
-
-
 
   // ==========================================
   // BENTO CARD 1: PROVENANCE STUDIO (INGEST & SEAL)
@@ -2291,15 +2466,17 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Bento Card Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
+          // Bento Card Header (Responsive with LayoutBuilder)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 750;
+
+              final leftHeader = Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
                       color: CyberTheme.cyan.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
@@ -2312,71 +2489,78 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.fingerprint_rounded, color: CyberTheme.cyan, size: 24),
+                    child: const Icon(Icons.fingerprint_rounded, color: CyberTheme.cyan, size: 22),
                   ),
                   const SizedBox(width: 14),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            'PROVENANCE INGESTION & SEALING ENGINE',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.8,
-                              color: Colors.white,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'PROVENANCE INGESTION & SEALING ENGINE',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                                color: Colors.white,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0x1A10B981),
-                              borderRadius: BorderRadius.circular(100),
-                              border: Border.all(color: const Color(0x4D10B981)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 5,
-                                  height: 5,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF10B981),
-                                    shape: BoxShape.circle,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0x1A10B981),
+                                borderRadius: BorderRadius.circular(100),
+                                border: Border.all(color: const Color(0x4D10B981)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 5,
+                                    height: 5,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF10B981),
+                                      shape: BoxShape.circle,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  'C2PA 2.1 ACTIVE',
-                                  style: GoogleFonts.jetBrainsMono(
-                                    color: const Color(0xFF34D399),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5,
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'C2PA 2.1 ACTIVE',
+                                    style: GoogleFonts.jetBrainsMono(
+                                      color: const Color(0xFF34D399),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Hardware Manifest Synthesis • 256-D Perceptual Tensor • Immutable Ledger Stamp',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          color: CyberTheme.textMuted,
-                          letterSpacing: 0.2,
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 3),
+                        Text(
+                          'Hardware Manifest Synthesis • 256-D Perceptual Tensor • Immutable Ledger Stamp',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: CyberTheme.textMuted,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
-              ),
-              Row(
+              );
+
+              final rightBadges = Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
@@ -2402,7 +2586,6 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
                     decoration: BoxDecoration(
@@ -2428,8 +2611,27 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     ),
                   ),
                 ],
-              ),
-            ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    leftHeader,
+                    const SizedBox(height: 12),
+                    rightBadges,
+                  ],
+                );
+              }
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: leftHeader),
+                  const SizedBox(width: 14),
+                  rightBadges,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 24),
 
@@ -3550,7 +3752,6 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   final isNarrow = constraints.maxWidth < 800;
 
                   final leftInfo = Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         padding: const EdgeInsets.all(10),
@@ -3562,49 +3763,53 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         child: const Icon(Icons.receipt_long_rounded, color: CyberTheme.indigo, size: 22),
                       ),
                       const SizedBox(width: 14),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                'IMMUTABLE AUDIT TRAIL',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: CyberTheme.accentColor.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: CyberTheme.borderAccent),
-                                ),
-                                child: Text(
-                                  'AES-GCM-256 VAULT',
-                                  style: GoogleFonts.jetBrainsMono(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    color: CyberTheme.shardColor,
-                                    letterSpacing: 0.6,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  'IMMUTABLE AUDIT TRAIL',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.8,
+                                    color: Colors.white,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'All sealed assets and cryptographic tombstones synchronize automatically across all computers.',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11.5,
-                              color: CyberTheme.textMuted,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: CyberTheme.accentColor.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: CyberTheme.borderAccent),
+                                  ),
+                                  child: Text(
+                                    'AES-GCM-256 VAULT',
+                                    style: GoogleFonts.jetBrainsMono(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: CyberTheme.shardColor,
+                                      letterSpacing: 0.6,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(
+                              'All sealed assets and cryptographic tombstones synchronize automatically across all computers.',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11.5,
+                                color: CyberTheme.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   );
@@ -3881,8 +4086,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 10,
                     children: [
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
@@ -3895,7 +4102,6 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         label: const Text('SEAL AN ASSET IN STUDIO', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
                         onPressed: () => _navigateToPage(1),
                       ),
-                      const SizedBox(width: 12),
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: CyberTheme.cyanLight,
@@ -3955,158 +4161,164 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               final accentColor = _getFileAccentColor(fileName);
               final fileIcon = _getFileIcon(fileName);
 
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: CyberTheme.surfaceElevated.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: CyberTheme.border),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x20000000),
-                      blurRadius: 10,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Format Icon
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: accentColor.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: accentColor.withValues(alpha: 0.35)),
-                      ),
-                      child: Icon(fileIcon, color: accentColor, size: 22),
-                    ),
-                    const SizedBox(width: 16),
+              return LayoutBuilder(
+                builder: (context, cardConstraints) {
+                  final isCompact = cardConstraints.maxWidth < 620;
 
-                    // File Details
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  final deleteButton = InkWell(
+                    onTap: () => _confirmDeleteSingleRecord(context, ledger, record, fileName),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: CyberTheme.coral.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: CyberTheme.coral.withValues(alpha: 0.45)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Top Line: File Name, Extension Badge, C2PA Badge, Owner Badge
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                fileName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
+                          Icon(Icons.delete_outline_rounded, size: 16, color: CyberTheme.coral),
+                          SizedBox(width: 6),
+                          Text(
+                            'DELETE',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                              color: CyberTheme.coral,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+
+                  final fileDetails = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top Line: File Name, Extension Badge, C2PA Badge, Owner Badge
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            fileName,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              ext,
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: accentColor,
+                                fontFamily: 'monospace',
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: accentColor.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: accentColor.withValues(alpha: 0.3)),
-                                ),
-                                child: Text(
-                                  ext,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: CyberTheme.emerald.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: CyberTheme.emerald.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_rounded, size: 10, color: CyberTheme.emerald),
+                                SizedBox(width: 3),
+                                Text(
+                                  'C2PA SEALED',
                                   style: TextStyle(
                                     fontSize: 9,
                                     fontWeight: FontWeight.w800,
-                                    color: accentColor,
+                                    color: CyberTheme.emerald,
                                     fontFamily: 'monospace',
                                   ),
                                 ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: CyberTheme.emerald.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: CyberTheme.emerald.withValues(alpha: 0.3)),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.verified_rounded, size: 10, color: CyberTheme.emerald),
-                                    SizedBox(width: 3),
-                                    Text(
-                                      'C2PA SEALED',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w800,
-                                        color: CyberTheme.emerald,
-                                        fontFamily: 'monospace',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (owner.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                  decoration: BoxDecoration(
-                                    color: CyberTheme.indigo.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: CyberTheme.indigo.withValues(alpha: 0.3)),
-                                  ),
-                                  child: Text(
-                                    owner,
-                                    style: const TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: CyberTheme.shardColor,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 6),
-
-                          // Second Line: SHA-256 Hash with 1-click Copy
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'SHA-256: ${record.originalFileHash}',
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    fontFamily: 'monospace',
-                                    color: CyberTheme.textMuted,
-                                    letterSpacing: 0.3,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              InkWell(
-                                onTap: () {
-                                  Clipboard.setData(ClipboardData(text: record.originalFileHash));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('SHA-256 hash copied to clipboard!'),
-                                      duration: Duration(seconds: 1),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                },
+                          if (owner.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: CyberTheme.indigo.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(3),
-                                  child: Icon(Icons.copy_rounded, size: 12, color: CyberTheme.cyanLight),
+                                border: Border.all(color: CyberTheme.indigo.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                owner,
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  color: CyberTheme.shardColor,
+                                  fontFamily: 'monospace',
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
 
-                          // Third Line: Timestamp and Manifest URI
+                      // Second Line: SHA-256 Hash with 1-click Copy
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'SHA-256: ${record.originalFileHash}',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontFamily: 'monospace',
+                                color: CyberTheme.textMuted,
+                                letterSpacing: 0.3,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: record.originalFileHash));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('SHA-256 hash copied to clipboard!'),
+                                  duration: Duration(seconds: 1),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: const Padding(
+                              padding: EdgeInsets.all(3),
+                              child: Icon(Icons.copy_rounded, size: 12, color: CyberTheme.cyanLight),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+
+                      // Third Line: Timestamp and Manifest URI
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(Icons.schedule_rounded, size: 11, color: CyberTheme.textMuted),
                               const SizedBox(width: 4),
@@ -4114,52 +4326,82 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                                 record.timestamp.toLocal().toString().substring(0, 16),
                                 style: const TextStyle(fontSize: 10, color: CyberTheme.textMuted, fontFamily: 'monospace'),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'MANIFEST: ${record.c2paManifestUri}',
-                                  style: const TextStyle(fontSize: 9.5, color: CyberTheme.textMuted, fontFamily: 'monospace'),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
                             ],
+                          ),
+                          Text(
+                            'MANIFEST: ${record.c2paManifestUri}',
+                            style: const TextStyle(fontSize: 9.5, color: CyberTheme.textMuted, fontFamily: 'monospace'),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(width: 16),
+                    ],
+                  );
 
-                    // High-Visibility Individual DELETE Button
-                    InkWell(
-                      onTap: () => _confirmDeleteSingleRecord(context, ledger, record, fileName),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: CyberTheme.coral.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: CyberTheme.coral.withValues(alpha: 0.45)),
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: CyberTheme.surfaceElevated.withValues(alpha: 0.65),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: CyberTheme.border),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x20000000),
+                          blurRadius: 10,
+                          offset: Offset(0, 3),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.delete_outline_rounded, size: 16, color: CyberTheme.coral),
-                            SizedBox(width: 6),
-                            Text(
-                              'DELETE',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
-                                color: CyberTheme.coral,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                    child: isCompact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: accentColor.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                                    ),
+                                    child: Icon(fileIcon, color: accentColor, size: 20),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: fileDetails),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: deleteButton,
+                              ),
+                            ],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                                ),
+                                child: Icon(fileIcon, color: accentColor, size: 22),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(child: fileDetails),
+                              const SizedBox(width: 16),
+                              deleteButton,
+                            ],
+                          ),
+                  );
+                },
               );
             },
           ),

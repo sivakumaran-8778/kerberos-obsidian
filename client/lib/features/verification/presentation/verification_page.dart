@@ -405,13 +405,16 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
           _analyzeLoadedBytes(bytes, file.name);
         }
       },
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 260),
-        child: _isScanning
-            ? _buildMinimalScanningLoader()
-            : (_report == null
-                ? _buildPremiumFullOpeningStation()
-                : _buildPremiumReportView()),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          child: _isScanning
+              ? _buildMinimalScanningLoader()
+              : (_report == null
+                  ? _buildPremiumFullOpeningStation()
+                  : _buildPremiumReportView()),
+        ),
       ),
     );
   }
@@ -420,55 +423,22 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
   // 1. UNIFIED FORENSIC WORKSTATION (Simple, Clean, Obsidian Aesthetic)
   // =========================================================================
   Widget _buildPremiumFullOpeningStation() {
-    return GlassContainer(
-      glow: true,
-      glowColor: CyberTheme.accentColor,
-      borderColor: CyberTheme.borderShard,
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Bento Workstation Header (Consistent with Studio / Obsidian design language)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return LayoutBuilder(
+      builder: (context, stationConstraints) {
+        final isCompact = stationConstraints.maxWidth < 600;
+        return GlassContainer(
+          glow: true,
+          glowColor: CyberTheme.accentColor,
+          borderColor: CyberTheme.borderShard,
+          padding: EdgeInsets.all(isCompact ? 14 : 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: CyberTheme.accentColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: CyberTheme.borderAccent),
-                    ),
-                    child: const Icon(Icons.verified_user_rounded, color: CyberTheme.accentColor, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'ZERO-TRUST FORENSIC VERIFICATION',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: CyberTheme.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        'C2PA MANIFEST, BITSTREAM SHA-256 PARITY & PERCEPTUAL STEGANOGRAPHY',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 10,
-                          color: CyberTheme.textMuted,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              Container(
+              // 1. Bento Workstation Header (Consistent with Studio / Obsidian design language)
+              LayoutBuilder(
+                builder: (context, headerConstraints) {
+                  final isNarrow = headerConstraints.maxWidth < 620;
+              final armedBadge = Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0x1810B981),
@@ -498,8 +468,75 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
                     ),
                   ],
                 ),
-              ),
-            ],
+              );
+
+              final headerTitle = Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: CyberTheme.accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: CyberTheme.borderAccent),
+                    ),
+                    child: const Icon(Icons.verified_user_rounded, color: CyberTheme.accentColor, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ZERO-TRUST FORENSIC VERIFICATION',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: isNarrow ? 12 : 14,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                            color: CyberTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'C2PA MANIFEST, BITSTREAM SHA-256 PARITY & PERCEPTUAL STEGANOGRAPHY',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: isNarrow ? 9 : 10,
+                            color: CyberTheme.textMuted,
+                            letterSpacing: 0.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: headerTitle),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    armedBadge,
+                  ],
+                );
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: headerTitle),
+                  const SizedBox(width: 12),
+                  armedBadge,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 24),
 
@@ -509,7 +546,10 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 54, horizontal: 24),
+              padding: EdgeInsets.symmetric(
+                vertical: isCompact ? 36 : 54,
+                horizontal: isCompact ? 14 : 24,
+              ),
               decoration: BoxDecoration(
                 color: _isDragging
                     ? CyberTheme.accentColor.withValues(alpha: 0.18)
@@ -685,24 +725,29 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
                     }).toList(),
                   );
                 } else {
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 10,
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: pillars.map((p) {
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(p.icon, color: p.accent, size: 13),
-                          const SizedBox(width: 6),
-                          Text(
-                            p.title,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Icon(p.icon, color: p.accent, size: 13),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                p.title,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       );
                     }).toList(),
                   );
@@ -713,35 +758,40 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
         ],
       ),
     );
+      },
+    );
   }
 
   Widget _buildFormatTag(String category, String formats, Color accent) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0x10FFFFFF),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0x1EFFFFFF)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$category: ',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: accent,
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$category: ',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: accent,
+              ),
             ),
-          ),
-          Text(
-            formats,
-            style: GoogleFonts.jetBrainsMono(
-              fontSize: 10,
-              color: Colors.white70,
+            TextSpan(
+              text: formats,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 9.5,
+                color: Colors.white70,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -1037,6 +1087,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 840;
+        final isNarrow = constraints.maxWidth < 650;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -1057,83 +1108,164 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
                   ),
                 ],
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: statusColor.withValues(alpha: 0.16),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.5)),
-                    ),
-                    child: Icon(
-                      isPristine
-                          ? Icons.verified_user_rounded
-                          : (isTampered ? Icons.gpp_bad_rounded : Icons.lock_open_rounded),
-                      color: statusColor,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-
-                  // Verdict Info
-                  Expanded(
-                    child: Row(
+              child: isNarrow
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: statusColor.withValues(alpha: 0.16),
+                                border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                              ),
+                              child: Icon(
+                                isPristine
+                                    ? Icons.verified_user_rounded
+                                    : (isTampered ? Icons.gpp_bad_rounded : Icons.lock_open_rounded),
+                                color: statusColor,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                                ),
+                                child: Text(
+                                  verdictTitle,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: statusColor,
+                                    letterSpacing: 0.5,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            CyberButton(
+                              variant: CyberButtonVariant.purple,
+                              height: 32,
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              icon: Icons.refresh_rounded,
+                              onTap: _resetVerification,
+                              child: const Text('Reset'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                report.fileName,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '• ${(report.fileSizeBytes / 1024).toStringAsFixed(1)} KB',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 10.5,
+                                color: CyberTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
+                  : Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(8),
+                            shape: BoxShape.circle,
+                            color: statusColor.withValues(alpha: 0.16),
                             border: Border.all(color: statusColor.withValues(alpha: 0.5)),
                           ),
-                          child: Text(
-                            verdictTitle,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              color: statusColor,
-                              letterSpacing: 0.5,
-                            ),
+                          child: Icon(
+                            isPristine
+                                ? Icons.verified_user_rounded
+                                : (isTampered ? Icons.gpp_bad_rounded : Icons.lock_open_rounded),
+                            color: statusColor,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+
+                        // Verdict Info
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                                ),
+                                child: Text(
+                                  verdictTitle,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: statusColor,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Flexible(
+                                child: Text(
+                                  report.fileName,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '• ${(report.fileSizeBytes / 1024).toStringAsFixed(1)} KB',
+                                style: GoogleFonts.jetBrainsMono(
+                                  fontSize: 11,
+                                  color: CyberTheme.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Flexible(
-                          child: Text(
-                            report.fileName,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '• ${(report.fileSizeBytes / 1024).toStringAsFixed(1)} KB',
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 11,
-                            color: CyberTheme.textSecondary,
-                          ),
+
+                        // Verify Another Action
+                        CyberButton(
+                          variant: CyberButtonVariant.purple,
+                          height: 34,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          icon: Icons.refresh_rounded,
+                          onTap: _resetVerification,
+                          child: const Text('Verify Another'),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-
-                  // Verify Another Action
-                  CyberButton(
-                    variant: CyberButtonVariant.purple,
-                    height: 34,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    icon: Icons.refresh_rounded,
-                    onTap: _resetVerification,
-                    child: const Text('Verify Another'),
-                  ),
-                ],
-              ),
             ),
 
             // 2. Diagnostic Notice Strip
@@ -1544,10 +1676,14 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.workspace_premium_rounded, color: Color(0xFFC084FC), size: 16),
                   const SizedBox(width: 8),
@@ -1585,61 +1721,75 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
           const SizedBox(height: 10),
 
           // Certificate Details
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 5,
-                child: Column(
+          LayoutBuilder(
+            builder: (context, certConstraints) {
+              final isCertNarrow = certConstraints.maxWidth < 620;
+              final checksumCol = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Live Cryptographic Checksum (Full SHA-256 Digest)',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    report.bitstream.computedHash,
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF38BDF8),
+                    ),
+                  ),
+                ],
+              );
+
+              final uriCol = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'C2PA Provenance Assertion Manifest URI',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    report.matchedRecord?.c2paManifestUri ?? 'urn:c2pa:obsidian:${report.bitstream.computedHash.substring(0, 16)}',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFC084FC),
+                    ),
+                  ),
+                ],
+              );
+
+              if (isCertNarrow) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Live Cryptographic Checksum (Full SHA-256 Digest)',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF94A3B8),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      report.bitstream.computedHash,
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF38BDF8),
-                      ),
-                    ),
+                    checksumCol,
+                    const SizedBox(height: 12),
+                    uriCol,
                   ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'C2PA Provenance Assertion Manifest URI',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF94A3B8),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      report.matchedRecord?.c2paManifestUri ?? 'urn:c2pa:obsidian:${report.bitstream.computedHash.substring(0, 16)}',
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFFC084FC),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 5, child: checksumCol),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 5, child: uriCol),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -1673,9 +1823,12 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Header Row with Wrap
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1735,25 +1888,50 @@ class _VerificationPageState extends ConsumerState<VerificationPage> with Single
     required String label,
     required Widget child,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 165,
-            child: Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFFD4C8EC),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 380;
+        if (isCompact) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                child,
+              ],
             ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 155,
+                child: Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFD4C8EC),
+                  ),
+                ),
+              ),
+              Expanded(child: child),
+            ],
           ),
-          Expanded(child: child),
-        ],
-      ),
+        );
+      },
     );
   }
 

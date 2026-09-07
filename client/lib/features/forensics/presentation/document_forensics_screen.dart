@@ -152,21 +152,25 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1100),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_report == null) ...[
-                _buildIntroHeader(),
-                const SizedBox(height: 24),
-                _buildUploadDropZone(),
-                const SizedBox(height: 28),
-                _buildForensicCapabilitiesGrid(),
-              ] else ...[
+    return LayoutBuilder(
+      builder: (context, screenConstraints) {
+        final isMobile = screenConstraints.maxWidth < 600;
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1100),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_report == null) ...[
+                    _buildIntroHeader(),
+                    const SizedBox(height: 24),
+                    _buildUploadDropZone(isMobile: isMobile),
+                    const SizedBox(height: 28),
+                    _buildForensicCapabilitiesGrid(),
+                  ] else ...[
                 _buildAuditHeader(),
                 const SizedBox(height: 20),
                 _buildVerdictBanner(),
@@ -209,7 +213,9 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         ),
       ),
     );
-  }
+  },
+);
+}
 
   // ==========================================
   // INTRO HEADER (BEFORE UPLOAD)
@@ -217,34 +223,35 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   Widget _buildIntroHeader() {
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0x2238BDF8),
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(color: const Color(0x6638BDF8)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.shield_outlined, size: 13, color: Color(0xFF38BDF8)),
-                  const SizedBox(width: 6),
-                  Text(
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0x2238BDF8),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: const Color(0x6638BDF8)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.shield_outlined, size: 13, color: Color(0xFF38BDF8)),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
                     'ZERO-TRUST UNSEALED DOCUMENT FORENSICS',
                     style: GoogleFonts.jetBrainsMono(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 1.1,
+                      letterSpacing: 0.8,
                       color: const Color(0xFF38BDF8),
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         const SizedBox(height: 14),
         Text(
@@ -274,7 +281,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   // ==========================================
   // SINGLE UPLOAD DROP-ZONE (EXACT USER REQUIREMENT)
   // ==========================================
-  Widget _buildUploadDropZone() {
+  Widget _buildUploadDropZone({bool isMobile = false}) {
     return DropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
@@ -310,7 +317,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 32, vertical: isMobile ? 28 : 48),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -351,28 +358,29 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                     border: Border.all(color: const Color(0x4438BDF8), width: 1.5),
                   ),
                   child: const Icon(
-                    Icons.file_upload_outlined,
-                    size: 34,
+                    Icons.fingerprint_rounded,
+                    size: 38,
                     color: Color(0xFF38BDF8),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 Text(
-                  'DRAG & DROP DOCUMENT HERE',
+                  _isDragging ? 'RELEASE TO COMMENCE ZERO-TRUST FORENSIC SCAN' : 'DRAG & DROP DOCUMENT OR TAP TO AUDIT',
+                  textAlign: TextAlign.center,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                    color: Colors.white,
+                    letterSpacing: 0.4,
+                    color: _isDragging ? const Color(0xFF38BDF8) : Colors.white,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Supports Medical Bills, IDs, Invoices, Audio (WAV/MP3), Video (MP4/MKV), CSV, Logs, & Text Data',
+                  'Supports statutory Aadhaar/UIDAI PDFs, medical bills, bank statements, JPG/PNG scans, Audio (WAV/MP3), and Video (MP4/MKV)',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
-                    color: CyberTheme.textSecondary,
+                    color: CyberTheme.textMuted,
                   ),
                 ),
                 const SizedBox(height: 22),
@@ -386,12 +394,16 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                     children: [
                       const Icon(Icons.upload_file_rounded, size: 18),
                       const SizedBox(width: 8),
-                      Text(
-                        'SELECT ANY DOCUMENT / MULTIMEDIA',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
+                      Flexible(
+                        child: Text(
+                          'SELECT ANY DOCUMENT / MULTIMEDIA',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -441,70 +453,113 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   // CAPABILITIES SUMMARY (BELOW UPLOAD)
   // ==========================================
   Widget _buildForensicCapabilitiesGrid() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildFeatureSummaryCard(
-                icon: Icons.difference_rounded,
-                title: 'PDF Revisions & Inline Diff',
-                description:
-                    'Deconstructs BT...ET text streams between original v1 and appended v2 revisions to pinpoint altered numbers.',
+    final cards = [
+      _buildFeatureSummaryCard(
+        icon: Icons.difference_rounded,
+        title: 'PDF Revisions & Inline Diff',
+        description:
+            'Deconstructs BT...ET text streams between original v1 and appended v2 revisions to pinpoint altered numbers.',
+      ),
+      _buildFeatureSummaryCard(
+        icon: Icons.grid_goldenratio_rounded,
+        title: 'Error Level Analysis (ELA)',
+        description:
+            'Visualizes spatial 16x16 quantization residuals to expose spliced text and copy-pasted images even without EXIF.',
+      ),
+      _buildFeatureSummaryCard(
+        icon: Icons.qr_code_scanner_rounded,
+        title: 'UIDAI QR Cross-Validation',
+        description:
+            'Validates RSA-signed 2D QR payloads on Aadhaar cards to detect surface text tampering and identity forgeries.',
+      ),
+      _buildFeatureSummaryCard(
+        icon: Icons.fingerprint_rounded,
+        title: 'Editor Software Signatures',
+        description:
+            'Identifies hidden footprints from Photoshop (8BIM), GIMP, Canva, iLovePDF, and unauthorized tools.',
+      ),
+      _buildFeatureSummaryCard(
+        icon: Icons.print_disabled_rounded,
+        title: 'Virtual Printer Laundering',
+        description:
+            'Detects re-distilled documents processed via virtual printer drivers (e.g. Print to PDF) to erase edit history.',
+      ),
+      _buildFeatureSummaryCard(
+        icon: Icons.alt_route_rounded,
+        title: 'Scramble & Header Parity',
+        description:
+            'Validates magic bytes, cross-reference tables, and detects scrambled bitstreams or truncated files.',
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 820) {
+          // 3 columns
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: cards[0]),
+                  const SizedBox(width: 14),
+                  Expanded(child: cards[1]),
+                  const SizedBox(width: 14),
+                  Expanded(child: cards[2]),
+                ],
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildFeatureSummaryCard(
-                icon: Icons.grid_goldenratio_rounded,
-                title: 'Error Level Analysis (ELA)',
-                description:
-                    'Visualizes spatial 16x16 quantization residuals to expose spliced text and copy-pasted images even without EXIF.',
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(child: cards[3]),
+                  const SizedBox(width: 14),
+                  Expanded(child: cards[4]),
+                  const SizedBox(width: 14),
+                  Expanded(child: cards[5]),
+                ],
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildFeatureSummaryCard(
-                icon: Icons.qr_code_scanner_rounded,
-                title: 'UIDAI QR Cross-Validation',
-                description:
-                    'Validates RSA-signed 2D QR payloads on Aadhaar cards to detect surface text tampering and identity forgeries.',
+            ],
+          );
+        } else if (constraints.maxWidth >= 550) {
+          // 2 columns
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: cards[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[1]),
+                ],
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFeatureSummaryCard(
-                icon: Icons.fingerprint_rounded,
-                title: 'Editor Software Signatures',
-                description:
-                    'Identifies hidden footprints from Photoshop (8BIM), GIMP, Canva, iLovePDF, and unauthorized tools.',
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: cards[2]),
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[3]),
+                ],
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildFeatureSummaryCard(
-                icon: Icons.print_disabled_rounded,
-                title: 'Virtual Printer Laundering',
-                description:
-                    'Detects re-distilled documents processed via virtual printer drivers (e.g. Print to PDF) to erase edit history.',
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: cards[4]),
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[5]),
+                ],
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildFeatureSummaryCard(
-                icon: Icons.alt_route_rounded,
-                title: 'Scramble & Header Parity',
-                description:
-                    'Validates magic bytes, cross-reference tables, and detects scrambled bitstreams or truncated files.',
-              ),
-            ),
-          ],
-        ),
-      ],
+            ],
+          );
+        } else {
+          // 1 column for mobile
+          return Column(
+            children: [
+              for (int i = 0; i < cards.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                cards[i],
+              ],
+            ],
+          );
+        }
+      },
     );
   }
 
@@ -557,94 +612,97 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         ? '${report.sha256Hash.substring(0, 10)}...${report.sha256Hash.substring(report.sha256Hash.length - 8)}'
         : report.sha256Hash;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: report.fileCategory.themeColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: report.fileCategory.themeColor.withValues(alpha: 0.5)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(report.fileCategory.icon, size: 12, color: report.fileCategory.themeColor),
-                        const SizedBox(width: 4),
-                        Text(
-                          report.fileCategory.label.toUpperCase(),
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: report.fileCategory.themeColor,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 620;
+        final infoColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: report.fileCategory.themeColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: report.fileCategory.themeColor.withValues(alpha: 0.5)),
                   ),
-                  Flexible(
-                    child: Text(
-                      report.fileName,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(report.fileCategory.icon, size: 12, color: report.fileCategory.themeColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        report.fileCategory.label.toUpperCase(),
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: report.fileCategory.themeColor,
+                          letterSpacing: 0.5,
+                        ),
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Text(
-                    '$sizeKb KB • ${report.mimeType.toUpperCase()} • ',
-                    style: GoogleFonts.jetBrainsMono(
-                      fontSize: 11,
-                      color: CyberTheme.textMuted,
+                ),
+                Flexible(
+                  child: Text(
+                    report.fileName,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: report.sha256Hash));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('SHA-256 Digest copied to clipboard'),
-                          duration: Duration(seconds: 2),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  '$sizeKb KB • ${report.mimeType.toUpperCase()} • ',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11,
+                    color: CyberTheme.textMuted,
+                  ),
+                ),
+                InkWell(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: report.sha256Hash));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('SHA-256 Digest copied to clipboard'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'SHA: $shortHash',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 11,
+                          color: const Color(0xFF38BDF8),
+                          decoration: TextDecoration.underline,
                         ),
-                      );
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'SHA: $shortHash',
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 11,
-                            color: const Color(0xFF38BDF8),
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.copy_rounded, size: 11, color: Color(0xFF38BDF8)),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.copy_rounded, size: 11, color: Color(0xFF38BDF8)),
+                    ],
                   ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        CyberButton(
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final auditAnotherButton = CyberButton(
           variant: CyberButtonVariant.glass,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -664,8 +722,27 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               ),
             ],
           ),
-        ),
-      ],
+        );
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              infoColumn,
+              const SizedBox(height: 12),
+              auditAnotherButton,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: infoColumn),
+            const SizedBox(width: 14),
+            auditAnotherButton,
+          ],
+        );
+      },
     );
   }
 
@@ -709,7 +786,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       verdict.label,
@@ -720,7 +800,6 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                         color: color,
                       ),
                     ),
-                    const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
@@ -1078,20 +1157,28 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
             children: [
-              Icon(Icons.qr_code_scanner_rounded, size: 20, color: accentColor),
-              const SizedBox(width: 10),
-              Text(
-                'UIDAI SECURE QR CODE CROSS-VALIDATION',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  color: Colors.white,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.qr_code_scanner_rounded, size: 20, color: accentColor),
+                  const SizedBox(width: 10),
+                  Text(
+                    'UIDAI SECURE QR CODE CROSS-VALIDATION',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -1757,70 +1844,113 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       originSubtext = 'Compressed by WhatsApp/Telegram pipeline';
     }
 
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricTile(
-                label: 'PDF REVISION COUNT',
-                value: '${report.revisionCount} Generation${report.revisionCount > 1 ? 's' : ''}',
-                statusGood: report.revisionCount <= 1,
-                subtext: report.revisionCount > 1 ? 'Incremental appends found' : 'Single generation original',
+    final tiles = [
+      _buildMetricTile(
+        label: 'PDF REVISION COUNT',
+        value: '${report.revisionCount} Generation${report.revisionCount > 1 ? 's' : ''}',
+        statusGood: report.revisionCount <= 1,
+        subtext: report.revisionCount > 1 ? 'Incremental appends found' : 'Single generation original',
+      ),
+      _buildMetricTile(
+        label: 'EDITOR FOOTPRINTS',
+        value: report.editingSoftwareDetected.isNotEmpty ? 'Detected' : 'Clean',
+        statusGood: report.editingSoftwareDetected.isEmpty,
+        subtext: editingTools,
+      ),
+      _buildMetricTile(
+        label: 'DIGITAL SIGNATURE (PKCS#7)',
+        value: sigLabel,
+        statusGood: sigGood,
+        subtext: sigSubtext,
+      ),
+      _buildMetricTile(
+        label: 'ORIGIN PIPELINE',
+        value: originLabel,
+        statusGood: originGood,
+        subtext: originSubtext,
+      ),
+      _buildMetricTile(
+        label: 'MAGIC HEADER PARITY',
+        value: report.isMagicByteValid ? 'RFC Valid' : 'Corrupted',
+        statusGood: report.isMagicByteValid,
+        subtext: report.mimeType,
+      ),
+      _buildMetricTile(
+        label: 'TRAILING STEGO PAYLOAD',
+        value: report.hasTrailingPayload ? '+${report.trailingPayloadBytes} Bytes' : 'None',
+        statusGood: !report.hasTrailingPayload,
+        subtext: report.hasTrailingPayload ? 'Appended past file terminator' : 'Clean file termination',
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 820) {
+          // 3 columns
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: tiles[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[1]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[2]),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricTile(
-                label: 'EDITOR FOOTPRINTS',
-                value: report.editingSoftwareDetected.isNotEmpty ? 'Detected' : 'Clean',
-                statusGood: report.editingSoftwareDetected.isEmpty,
-                subtext: editingTools,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: tiles[3]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[4]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[5]),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricTile(
-                label: 'DIGITAL SIGNATURE (PKCS#7)',
-                value: sigLabel,
-                statusGood: sigGood,
-                subtext: sigSubtext,
+            ],
+          );
+        } else if (constraints.maxWidth >= 550) {
+          // 2 columns
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: tiles[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[1]),
+                ],
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricTile(
-                label: 'ORIGIN PIPELINE',
-                value: originLabel,
-                statusGood: originGood,
-                subtext: originSubtext,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: tiles[2]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[3]),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricTile(
-                label: 'MAGIC HEADER PARITY',
-                value: report.isMagicByteValid ? 'RFC Valid' : 'Corrupted',
-                statusGood: report.isMagicByteValid,
-                subtext: report.mimeType,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: tiles[4]),
+                  const SizedBox(width: 12),
+                  Expanded(child: tiles[5]),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricTile(
-                label: 'TRAILING STEGO PAYLOAD',
-                value: report.hasTrailingPayload ? '+${report.trailingPayloadBytes} Bytes' : 'None',
-                statusGood: !report.hasTrailingPayload,
-                subtext: report.hasTrailingPayload ? 'Appended past file terminator' : 'Clean file termination',
-              ),
-            ),
-          ],
-        ),
-      ],
+            ],
+          );
+        } else {
+          // 1 column
+          return Column(
+            children: [
+              for (int i = 0; i < tiles.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                tiles[i],
+              ],
+            ],
+          );
+        }
+      },
     );
   }
 
