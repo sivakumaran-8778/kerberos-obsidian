@@ -18,6 +18,7 @@ import '../../provenance/providers/provenance_providers.dart';
 import '../../network/providers/network_providers.dart';
 import '../../../main.dart'; // for ledgerProvider
 import '../../verification/presentation/verification_page.dart';
+import '../../forensics/presentation/document_forensics_screen.dart';
 import '../../radar/presentation/radar_page.dart';
 import '../../radar/providers/radar_providers.dart';
 import '../../radar/services/p2p_session_service.dart';
@@ -29,6 +30,7 @@ enum ActiveDeckModal {
   verify,
   radar,
   ledger,
+  docForensics,
   profile,
 }
 
@@ -118,6 +120,9 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
           _activeModal = ActiveDeckModal.ledger;
           break;
         case 5:
+          _activeModal = ActiveDeckModal.docForensics;
+          break;
+        case 6:
           _activeModal = ActiveDeckModal.profile;
           break;
       }
@@ -1013,7 +1018,17 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                         child: _buildLedgerAuditTrail(isFullPage: true),
                       ),
 
-                      // Page 5: Dedicated User Profile Page
+                      // Page 5: Document Integrity & Forensics (Unsealed Blind Tamper Detection)
+                      _buildPageLayout(
+                        title: 'DOCUMENT INTEGRITY & FORENSICS',
+                        icon: Icons.document_scanner_rounded,
+                        badge: 'UNSEALED BLIND TAMPER INSPECTION',
+                        description:
+                            'Deep binary inspection for government IDs, medical bills, invoices, and digital files. Detects incremental revisions, editing software footprints, and bitstream scrambling.',
+                        child: const DocumentForensicsScreen(),
+                      ),
+
+                      // Page 6: Dedicated User Profile Page
                       _buildUserProfilePage(userProfile),
                     ],
                   ),
@@ -1038,8 +1053,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         return 3; // Radar
       case ActiveDeckModal.ledger:
         return 4; // Ledger
+      case ActiveDeckModal.docForensics:
+        return 5; // Forensics
       case ActiveDeckModal.profile:
-        return -1; // None of the 5 tabs is active
+        return -1; // None of the 6 tabs is active
     }
   }
 
@@ -1055,8 +1072,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         return 3; // Radar
       case ActiveDeckModal.ledger:
         return 4; // Ledger
+      case ActiveDeckModal.docForensics:
+        return 5; // Document Forensics
       case ActiveDeckModal.profile:
-        return 5; // User Profile
+        return 6; // User Profile
     }
   }
 
@@ -1064,9 +1083,9 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   // ANIMATED SLIDING NAV SEGMENTED CONTROL
   // ==========================================
   Widget _buildNavSegmentedControl() {
-    const double tabWidth = 80.0;
+    const double tabWidth = 76.0;
     const double tabHeight = 36.0;
-    final activeIndex = _activeNavIndex; // 0, 1, 2, 3, 4, or -1
+    final activeIndex = _activeNavIndex; // 0, 1, 2, 3, 4, 5, or -1
 
     return Container(
       padding: const EdgeInsets.all(3.0),
@@ -1076,7 +1095,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         border: Border.all(color: const Color(0x24FFFFFF), width: 1.0),
       ),
       child: SizedBox(
-        width: tabWidth * 5,
+        width: tabWidth * 6,
         height: tabHeight,
         child: Stack(
           children: [
@@ -1136,7 +1155,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               ),
             ),
 
-            // 2. Interactive Navigation Options (Home, Studio, Verify, Radar, Ledger)
+            // 2. Interactive Navigation Options (Home, Studio, Verify, Radar, Ledger, Forensics)
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1165,6 +1184,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   4,
                   () => _navigateToPage(4),
                 ),
+                _buildNavTabItem(
+                  'Forensics',
+                  5,
+                  () => _navigateToPage(5),
+                ),
               ],
             ),
           ],
@@ -1176,7 +1200,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   Widget _buildNavTabItem(String title, int index, VoidCallback onTap) {
     final isActive = _activeNavIndex == index;
     return SizedBox(
-      width: 80.0,
+      width: 76.0,
       height: 36.0,
       child: Material(
         color: Colors.transparent,
@@ -1189,7 +1213,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               duration: const Duration(milliseconds: 200),
               style: GoogleFonts.plusJakartaSans(
                 color: isActive ? Colors.white : const Color(0x99FFFFFF),
-                fontSize: 13,
+                fontSize: 12.0,
                 fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
                 letterSpacing: 0.2,
               ),
@@ -1696,6 +1720,23 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
               onTap: () => _navigateToPage(3),
               child: Text(
                 'Launch Radar',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            CyberButton(
+              variant: CyberButtonVariant.glassPill,
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              icon: Icons.document_scanner_rounded,
+              enableHoverPop: true,
+              onTap: () => _navigateToPage(5),
+              child: Text(
+                'Doc Forensics',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
