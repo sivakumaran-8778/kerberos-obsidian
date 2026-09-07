@@ -48,7 +48,7 @@ class VerificationPage extends ConsumerStatefulWidget {
   ConsumerState<VerificationPage> createState() => _VerificationPageState();
 }
 
-class _VerificationPageState extends ConsumerState<VerificationPage> {
+class _VerificationPageState extends ConsumerState<VerificationPage> with SingleTickerProviderStateMixin {
   CompleteVerificationReport? _report;
   bool _isDragging = false;
 
@@ -68,6 +68,23 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
   _StepScanEvaluation? _step2Eval;
   _StepScanEvaluation? _step3Eval;
   _StepScanEvaluation? _step4Eval;
+
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   _StepScanEvaluation _evaluateStep1(CompleteVerificationReport report) {
     final bitstream = report.bitstream;
@@ -291,8 +308,8 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       _step4Eval = s4;
     });
 
-    // Step 1: Bitstream Cryptographic Parity (SHA-256)
-    await Future.delayed(const Duration(milliseconds: 280));
+    // Step 1: Bitstream Parity
+    await Future.delayed(const Duration(milliseconds: 260));
     if (!mounted) return;
     setState(() {
       _step1Revealed = true;
@@ -300,8 +317,8 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       _scanProgress = 0.45;
     });
 
-    // Step 2: C2PA Manifest Provenance Envelope
-    await Future.delayed(const Duration(milliseconds: 280));
+    // Step 2: C2PA Manifest Envelope
+    await Future.delayed(const Duration(milliseconds: 260));
     if (!mounted) return;
     setState(() {
       _step2Revealed = true;
@@ -309,8 +326,8 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       _scanProgress = 0.70;
     });
 
-    // Step 3: 256-Cell Perceptual Neural Tensor
-    await Future.delayed(const Duration(milliseconds: 280));
+    // Step 3: Neural Steganography Matrix
+    await Future.delayed(const Duration(milliseconds: 260));
     if (!mounted) return;
     setState(() {
       _step3Revealed = true;
@@ -318,8 +335,8 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       _scanProgress = 0.90;
     });
 
-    // Step 4: Air-Gapped Ledger Cross-Validation
-    await Future.delayed(const Duration(milliseconds: 280));
+    // Step 4: Ledger Proof
+    await Future.delayed(const Duration(milliseconds: 260));
     if (!mounted) return;
     setState(() {
       _step4Revealed = true;
@@ -328,8 +345,8 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       _scanCompleted = true;
     });
 
-    // Smooth, minimal auto-transition to the report after brief tick view
-    await Future.delayed(const Duration(milliseconds: 400));
+    // Auto-transition smoothly into the report view
+    await Future.delayed(const Duration(milliseconds: 380));
     if (!mounted) return;
     setState(() {
       _report = _pendingReport;
@@ -386,143 +403,324 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         }
       },
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 260),
         child: _isScanning
             ? _buildMinimalScanningLoader()
-            : (_report == null ? _buildCleanDropzoneHero() : _buildCleanReportView()),
+            : (_report == null ? _buildPremiumFullOpeningStation() : _buildPremiumReportView()),
       ),
     );
   }
 
-  // ==========================================
-  // 1. CLEAN DROPZONE HERO (Fits on screen)
-  // ==========================================
-  Widget _buildCleanDropzoneHero() {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 820),
-        margin: const EdgeInsets.symmetric(vertical: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-        decoration: BoxDecoration(
-          color: _isDragging ? const Color(0x22C084FC) : const Color(0x10FFFFFF),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _isDragging ? CyberTheme.accentColor : const Color(0x24FFFFFF),
-            width: 1.2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _isDragging
-                  ? CyberTheme.accentColor.withValues(alpha: 0.25)
-                  : Colors.black.withValues(alpha: 0.3),
-              blurRadius: 24,
-            ),
-          ],
-        ),
-        child: Column(
+  // =========================================================================
+  // 1. PREMIUM FULL OPENING WORKSTATION (Completely solves the empty space!)
+  // =========================================================================
+  Widget _buildPremiumFullOpeningStation() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 900;
+
+        return Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Minimal Cyber Icon
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: CyberTheme.shardGradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: CyberTheme.accentColor.withValues(alpha: 0.35),
-                    blurRadius: 16,
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Left Side: Ingestion Dropzone Portal (~50% width)
+                  Expanded(
+                    flex: 5,
+                    child: _buildIngestionDropzoneCard(),
+                  ),
+                  const SizedBox(width: 18),
+
+                  // Right Side: 4-Pillar Security Architecture Showcase (~50% width)
+                  Expanded(
+                    flex: 5,
+                    child: _buildSecurityPillarsArchitectureShowcase(),
                   ),
                 ],
+              )
+            else
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildIngestionDropzoneCard(),
+                  const SizedBox(height: 16),
+                  _buildSecurityPillarsArchitectureShowcase(),
+                ],
               ),
-              child: const Icon(
-                Icons.verified_user_rounded,
-                color: Colors.white,
-                size: 26,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            Text(
-              'Cryptographic Forensic Verification',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: -0.3,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 6),
-
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 580),
-              child: Text(
-                'Drop any digital asset to perform 4-pillar cryptographic verification: live SHA-256 bitstream parity, C2PA JUMBF assertion envelope, neural perceptual matrix, and air-gapped ledger anchors.',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: CyberTheme.textSecondary,
-                  height: 1.45,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            CyberButton(
-              variant: CyberButtonVariant.whitePill,
-              height: 38,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              icon: Icons.folder_open_rounded,
-              onTap: _pickFile,
-              child: const Text('Browse File to Audit'),
-            ),
-            const SizedBox(height: 20),
-
-            // Minimal Supported Formats Pills
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                _buildFormatPill('IMAGE', 'JPG, PNG, WEBP, TIFF'),
-                _buildFormatPill('AUDIO', 'MP3, WAV, M4A, AAC'),
-                _buildFormatPill('DOCUMENT', 'PDF, C2PA, BIN'),
-              ],
-            ),
           ],
+        );
+      },
+    );
+  }
+
+  // Left Panel: Ingestion Portal
+  Widget _buildIngestionDropzoneCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+      decoration: BoxDecoration(
+        color: _isDragging ? const Color(0x22A855F7) : const Color(0xFF140E26),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _isDragging ? CyberTheme.accentColor : const Color(0x28FFFFFF),
+          width: 1.2,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: _isDragging
+                ? CyberTheme.accentColor.withValues(alpha: 0.28)
+                : const Color(0x35000000),
+            blurRadius: 28,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Animated Concentric Glowing Radar / Shield Graphic
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) {
+              final scale = 1.0 + (_pulseController.value * 0.06);
+              return Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: CyberTheme.shardGradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: CyberTheme.accentColor.withValues(
+                        alpha: 0.35 + (_pulseController.value * 0.25),
+                      ),
+                      blurRadius: 24 * scale,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.shield_rounded,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+
+          Text(
+            'Cryptographic Forensic Ingestion',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.3,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+
+          Text(
+            'Drop any asset or export file here. Project Kerberos executes bit-for-bit mathematical parity, C2PA manifest provenance, and immutable ledger authentication in seconds.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: CyberTheme.textSecondary,
+              height: 1.45,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 18),
+
+          CyberButton(
+            variant: CyberButtonVariant.purple,
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 26),
+            icon: Icons.file_upload_outlined,
+            onTap: _pickFile,
+            child: const Text('Browse File to Audit'),
+          ),
+          const SizedBox(height: 16),
+
+          // Accepted Format Pills
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.center,
+            children: [
+              _buildFormatTag('IMAGE', 'JPG, PNG, WEBP, TIFF', const Color(0xFFC084FC)),
+              _buildFormatTag('DOCUMENT', 'PDF, C2PA, BIN', const Color(0xFF38BDF8)),
+              _buildFormatTag('AUDIO', 'MP3, WAV, M4A, AAC', const Color(0xFF34D399)),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildFormatPill(String label, String formats) {
+  Widget _buildFormatTag(String category, String formats, Color accent) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
       decoration: BoxDecoration(
-        color: const Color(0x0CFFFFFF),
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: const Color(0x1CFFFFFF)),
+        color: const Color(0x10FFFFFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x1EFFFFFF)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$label: ',
+            '$category: ',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFFC084FC),
+              color: accent,
             ),
           ),
           Text(
             formats,
             style: GoogleFonts.jetBrainsMono(
               fontSize: 10,
-              color: Colors.white60,
+              color: Colors.white70,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // Right Panel: 4-Pillar Security Architecture Preview
+  Widget _buildSecurityPillarsArchitectureShowcase() {
+    final pillars = [
+      (
+        icon: Icons.fingerprint_rounded,
+        accent: const Color(0xFF38BDF8),
+        title: 'I. Bitstream Cryptographic Parity',
+        desc: 'Computes live SHA-256 digest to mathematically verify 100% bitstream parity against the immutable sealed baseline.',
+      ),
+      (
+        icon: Icons.verified_outlined,
+        accent: const Color(0xFFC084FC),
+        title: 'II. C2PA Manifest Provenance',
+        desc: 'Inspects embedded hardware JUMBF assertion boxes, Ed25519 device signatures, and detects social media proxy stripping.',
+      ),
+      (
+        icon: Icons.grid_4x4_rounded,
+        accent: const Color(0xFF34D399),
+        title: 'III. 256-Cell Neural Perceptual Tensor',
+        desc: 'Edge-native neural inference models verify perceptual stability and detect high-frequency steganographic alteration.',
+      ),
+      (
+        icon: Icons.hub_outlined,
+        accent: const Color(0xFFA855F7),
+        title: 'IV. Air-Gapped Ledger Cross-Validation',
+        desc: 'Content-addressable proof verified against local immutable Hive blocks with tamper-evident audit timestamps.',
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140E26),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x28FFFFFF), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x35000000),
+            blurRadius: 28,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.security_update_good_rounded, color: Color(0xFFC084FC), size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'ZERO-TRUST AUDIT ARCHITECTURE',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFD4C8EC),
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x2210B981),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x5510B981)),
+                ),
+                child: Text(
+                  'ENCLAVE ARMED',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF34D399),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(color: Color(0x14FFFFFF), height: 1),
+          const SizedBox(height: 12),
+
+          // 4 Pillar mini-rows
+          ...pillars.map((p) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: p.accent.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: p.accent.withValues(alpha: 0.3)),
+                      ),
+                      child: Icon(p.icon, color: p.accent, size: 14),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.title,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 1.5),
+                          Text(
+                            p.desc,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10.5,
+                              color: CyberTheme.textMuted,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )),
         ],
       ),
     );
@@ -555,7 +753,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         margin: const EdgeInsets.symmetric(vertical: 16),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         decoration: BoxDecoration(
-          color: const Color(0x14FFFFFF),
+          color: const Color(0xFF140E26),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: accent.withValues(alpha: 0.35), width: 1.2),
           boxShadow: [
@@ -695,7 +893,6 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       ),
       child: Row(
         children: [
-          // Step Icon / Status
           SizedBox(
             width: 20,
             height: 20,
@@ -731,7 +928,6 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
           ),
           const SizedBox(width: 10),
 
-          // Title & Subtitle
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -759,7 +955,6 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
           ),
           const SizedBox(width: 8),
 
-          // Badge
           if (isRevealed)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -782,10 +977,10 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
     );
   }
 
-  // ================================================================
-  // 3. CLEAN REPORT VIEW (Fits on Screen, 0 Attack Simulations)
-  // ================================================================
-  Widget _buildCleanReportView() {
+  // =========================================================================
+  // 3. PREMIUM VERIFIED REPORT VIEW (Refined typography, elegant Test 4)
+  // =========================================================================
+  Widget _buildPremiumReportView() {
     final report = _report!;
     final verdict = report.verdict;
     final isTampered = verdict == VerificationVerdict.bitstreamShattered ||
@@ -802,7 +997,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         ? (report.isRenamed ? 'GENUINE • RENAMED ASSET' : 'VERIFIED GENUINE & SEALED')
         : (isTampered ? 'FORENSIC BREACH DETECTED' : 'UNSEALED DIGITAL ASSET');
 
-    // Resolve exact failure or notice explanation
+    // Diagnostic context
     String explanationText = '';
     if (isTampered) {
       if (verdict == VerificationVerdict.bitstreamShattered) {
@@ -821,46 +1016,61 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 780;
+        final isWide = constraints.maxWidth >= 840;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. Sleek Compact Top Bar
+            // 1. Sleek Luxury Verdict Hero Bar
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0x12FFFFFF),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: statusColor.withValues(alpha: 0.35)),
+                color: const Color(0xFF140E26),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: statusColor.withValues(alpha: 0.45), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: statusColor.withValues(alpha: 0.15),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
-                  Icon(
-                    isPristine
-                        ? Icons.verified_user_rounded
-                        : (isTampered ? Icons.gpp_bad_rounded : Icons.lock_open_rounded),
-                    color: statusColor,
-                    size: 20,
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: statusColor.withValues(alpha: 0.16),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                    ),
+                    child: Icon(
+                      isPristine
+                          ? Icons.verified_user_rounded
+                          : (isTampered ? Icons.gpp_bad_rounded : Icons.lock_open_rounded),
+                      color: statusColor,
+                      size: 18,
+                    ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 14),
 
-                  // File and Verdict Info
+                  // Verdict Info
                   Expanded(
                     child: Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
                           decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: statusColor.withValues(alpha: 0.45)),
+                            color: statusColor.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: statusColor.withValues(alpha: 0.5)),
                           ),
                           child: Text(
                             verdictTitle,
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 10,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                               color: statusColor,
                               letterSpacing: 0.5,
@@ -872,7 +1082,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                           child: Text(
                             report.fileName,
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
+                              fontSize: 13.5,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
@@ -893,11 +1103,11 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                   ),
                   const SizedBox(width: 12),
 
-                  // Verify Another Button
+                  // Verify Another Action
                   CyberButton(
-                    variant: CyberButtonVariant.glassPill,
-                    height: 32,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    variant: CyberButtonVariant.purple,
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     icon: Icons.refresh_rounded,
                     onTap: _resetVerification,
                     child: const Text('Verify Another'),
@@ -906,15 +1116,15 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
               ),
             ),
 
-            // 2. Compact Notice Strip (Only if there is an alert / renamed file)
+            // 2. Diagnostic Notice Strip
             if (explanationText.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: statusColor.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: statusColor.withValues(alpha: 0.28)),
+                  border: Border.all(color: statusColor.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -930,7 +1140,7 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
                       child: Text(
                         explanationText,
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
+                          fontSize: 11.5,
                           color: Colors.white70,
                           height: 1.3,
                         ),
@@ -944,24 +1154,24 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
             ],
             const SizedBox(height: 12),
 
-            // 3. The 4 Verification Pillar Cards (Clean 2x2 Grid or 1 Column)
+            // 3. 4-Pillar Grid (2x2)
             if (isWide)
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     children: [
-                      Expanded(child: _buildPillarCard1Bitstream(report)),
+                      Expanded(child: _buildPremiumPillar1Bitstream(report)),
                       const SizedBox(width: 12),
-                      Expanded(child: _buildPillarCard2C2PA(report)),
+                      Expanded(child: _buildPremiumPillar2C2PA(report)),
                     ],
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(child: _buildPillarCard3Stego(report)),
+                      Expanded(child: _buildPremiumPillar3Stego(report)),
                       const SizedBox(width: 12),
-                      Expanded(child: _buildPillarCard4Ledger(report)),
+                      Expanded(child: _buildPremiumPillar4Ledger(report)),
                     ],
                   ),
                 ],
@@ -970,13 +1180,13 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildPillarCard1Bitstream(report),
+                  _buildPremiumPillar1Bitstream(report),
                   const SizedBox(height: 10),
-                  _buildPillarCard2C2PA(report),
+                  _buildPremiumPillar2C2PA(report),
                   const SizedBox(height: 10),
-                  _buildPillarCard3Stego(report),
+                  _buildPremiumPillar3Stego(report),
                   const SizedBox(height: 10),
-                  _buildPillarCard4Ledger(report),
+                  _buildPremiumPillar4Ledger(report),
                 ],
               ),
           ],
@@ -986,9 +1196,9 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
   }
 
   // -------------------------------------------------------------
-  // PILLAR 1 CARD: Bitstream Cryptographic Parity (SHA-256)
+  // PILLAR 1: Bitstream Cryptographic Parity (SHA-256)
   // -------------------------------------------------------------
-  Widget _buildPillarCard1Bitstream(CompleteVerificationReport report) {
+  Widget _buildPremiumPillar1Bitstream(CompleteVerificationReport report) {
     final b = report.bitstream;
     final isMatch = b.isMatch;
     final isUnsealed = report.verdict == VerificationVerdict.unsealed;
@@ -1008,43 +1218,52 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         ? '${b.computedHash.substring(0, 10)}...${b.computedHash.substring(b.computedHash.length - 8)}'
         : b.computedHash;
 
-    return _buildPillarContainer(
+    return _buildLuxuryCardFrame(
       icon: Icons.fingerprint_rounded,
-      title: 'I. BITSTREAM CRYPTOGRAPHIC PARITY',
+      accentColor: const Color(0xFF38BDF8),
+      title: 'Pillar I: Bitstream Parity',
       badgeText: badgeText,
       badgeColor: badgeColor,
-      rows: [
-        _buildMetricRow(
-          label: 'EXPECTED SEAL',
-          value: isUnsealed ? 'None (Unsealed Asset)' : expectedShort,
-          isMono: true,
-          copyValue: isUnsealed ? null : b.manifestHash,
+      children: [
+        _buildLuxuryRow(
+          label: 'Expected Seal Hash',
+          child: _buildHashChip(
+            isUnsealed ? 'None (Unsealed Asset)' : expectedShort,
+            copyValue: isUnsealed ? null : b.manifestHash,
+            color: const Color(0xFF38BDF8),
+          ),
         ),
-        _buildMetricRow(
-          label: 'COMPUTED LIVE HASH',
-          value: computedShort,
-          isMono: true,
-          isAlert: !isMatch && !isUnsealed,
-          copyValue: b.computedHash,
+        _buildLuxuryRow(
+          label: 'Live Computed Digest',
+          child: _buildHashChip(
+            computedShort,
+            copyValue: b.computedHash,
+            color: isMatch ? const Color(0xFF34D399) : const Color(0xFFFB7185),
+          ),
         ),
-        _buildMetricRow(
-          label: 'BYTE INTEGRITY METRIC',
-          value: isMatch
-              ? (report.isRenamed ? '0 Bytes Altered (Identical Bitstream)' : '0 Bytes Altered • Perfect Mathematical Parity')
-              : (isUnsealed
-                  ? 'Raw SHA-256 calculated • Ready for seal'
-                  : '${b.flippedBytesCount} Byte(s) Altered at 0x${(b.byteOffset ?? 0).toRadixString(16).toUpperCase()}'),
-          isAlert: !isMatch && !isUnsealed,
-          valueColor: isMatch ? const Color(0xFF34D399) : null,
+        _buildLuxuryRow(
+          label: 'Byte Parity Analysis',
+          child: Text(
+            isMatch
+                ? (report.isRenamed ? '0 Bytes Altered • Identical Bitstream' : '0 Bytes Altered • Perfect Parity')
+                : (isUnsealed
+                    ? 'Live SHA-256 computed • Ready for initial seal'
+                    : '${b.flippedBytesCount} Byte(s) Altered at 0x${(b.byteOffset ?? 0).toRadixString(16).toUpperCase()}'),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: isMatch ? const Color(0xFF34D399) : (isUnsealed ? Colors.white70 : const Color(0xFFFB7185)),
+            ),
+          ),
         ),
       ],
     );
   }
 
   // -------------------------------------------------------------
-  // PILLAR 2 CARD: C2PA Manifest Provenance Envelope
+  // PILLAR 2: C2PA Manifest Provenance Envelope
   // -------------------------------------------------------------
-  Widget _buildPillarCard2C2PA(CompleteVerificationReport report) {
+  Widget _buildPremiumPillar2C2PA(CompleteVerificationReport report) {
     final m = report.metadataScrub;
     final isUnsealed = report.verdict == VerificationVerdict.unsealed;
     final isScrubbed = m.isScrubbed;
@@ -1056,37 +1275,76 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         ? 'C2PA v1.4 VALID'
         : (isUnsealed ? 'NO MANIFEST' : 'MANIFEST STRIPPED');
 
-    return _buildPillarContainer(
+    return _buildLuxuryCardFrame(
       icon: Icons.verified_outlined,
-      title: 'II. C2PA MANIFEST ENVELOPE',
+      accentColor: const Color(0xFFC084FC),
+      title: 'Pillar II: C2PA Provenance Manifest',
       badgeText: badgeText,
       badgeColor: badgeColor,
-      rows: [
-        _buildMetricRow(
-          label: 'JUMBF ASSERTION CONTAINER',
-          value: m.hasJumbfPayload ? 'Present (c2pa:jumbf:assertion-store)' : 'Null Pointer (0x0 - Missing)',
-          isAlert: !m.hasJumbfPayload && !isUnsealed,
-          valueColor: m.hasJumbfPayload ? const Color(0xFF34D399) : null,
+      children: [
+        _buildLuxuryRow(
+          label: 'JUMBF Container Box',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                m.hasJumbfPayload ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                size: 13,
+                color: m.hasJumbfPayload ? const Color(0xFF34D399) : const Color(0xFFFB7185),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                m.hasJumbfPayload ? 'Present (assertion-store)' : 'Null Pointer (0x0 - Stripped)',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: m.hasJumbfPayload ? const Color(0xFF34D399) : const Color(0xFFFB7185),
+                ),
+              ),
+            ],
+          ),
         ),
-        _buildMetricRow(
-          label: 'ORIGIN DEVICE CERTIFICATE',
-          value: m.originCertificateValid ? 'Valid Ed25519 Hardware Signature' : 'Broken / Missing Signature Chain',
-          isAlert: !m.originCertificateValid && !isUnsealed,
-          valueColor: m.originCertificateValid ? const Color(0xFF34D399) : null,
+        _buildLuxuryRow(
+          label: 'Origin Device Certificate',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                m.originCertificateValid ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                size: 13,
+                color: m.originCertificateValid ? const Color(0xFF34D399) : const Color(0xFFFB7185),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                m.originCertificateValid ? 'Valid Ed25519 Hardware Signature' : 'Broken / Missing Signature Chain',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: m.originCertificateValid ? const Color(0xFF34D399) : const Color(0xFFFB7185),
+                ),
+              ),
+            ],
+          ),
         ),
-        _buildMetricRow(
-          label: 'PROXY / INTERCEPTOR ANALYSIS',
-          value: m.interceptorDiagnosis ?? 'Direct P2P Link (Pristine Origin)',
-          isAlert: isScrubbed,
+        _buildLuxuryRow(
+          label: 'Network Origin Assessment',
+          child: Text(
+            m.interceptorDiagnosis ?? 'Direct P2P Link (Pristine Origin)',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: isScrubbed ? const Color(0xFFFB7185) : Colors.white,
+            ),
+          ),
         ),
       ],
     );
   }
 
   // -------------------------------------------------------------
-  // PILLAR 3 CARD: Neural Steganography & Perceptual Drift
+  // PILLAR 3: Neural Steganography & Perceptual Drift
   // -------------------------------------------------------------
-  Widget _buildPillarCard3Stego(CompleteVerificationReport report) {
+  Widget _buildPremiumPillar3Stego(CompleteVerificationReport report) {
     final s = report.steganography;
     final isUnsealed = report.verdict == VerificationVerdict.unsealed;
     final isAltered = s.isAltered;
@@ -1098,38 +1356,75 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
         ? (isUnsealed ? 'BASELINE MATRIX' : 'PRISTINE (0.00%)')
         : 'STEGO DRIFT DETECTED';
 
-    return _buildPillarContainer(
+    return _buildLuxuryCardFrame(
       icon: Icons.grid_4x4_rounded,
-      title: 'III. NEURAL PERCEPTUAL MATRIX',
+      accentColor: const Color(0xFF34D399),
+      title: 'Pillar III: Neural Perceptual Matrix',
       badgeText: badgeText,
       badgeColor: badgeColor,
-      rows: [
-        _buildMetricRow(
-          label: 'PERCEPTUAL DRIFT',
-          value: '${s.perceptualDrift.toStringAsFixed(2)}%',
-          isMono: true,
-          isAlert: isAltered,
-          valueColor: !isAltered ? const Color(0xFF34D399) : null,
+      children: [
+        _buildLuxuryRow(
+          label: 'Perceptual Drift Metric',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${s.perceptualDrift.toStringAsFixed(2)}% Drift',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: isAltered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: (isAltered ? const Color(0xFFEF4444) : const Color(0xFF10B981)).withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  isAltered ? 'DRIFT ALERT' : 'DELTA 0.0',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w700,
+                    color: isAltered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        _buildMetricRow(
-          label: 'HIGH-FREQUENCY ANOMALIES',
-          value: isAltered ? 'Altered / Stego Injected Pixels' : 'None Detected (Pristine Visual Parity)',
-          isAlert: isAltered,
-          valueColor: !isAltered ? const Color(0xFF34D399) : null,
+        _buildLuxuryRow(
+          label: 'High-Frequency Bands',
+          child: Text(
+            isAltered ? 'Altered / Hidden Data Payload Detected' : 'None Detected (Pristine High-Frequency Parity)',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: isAltered ? const Color(0xFFFB7185) : const Color(0xFF34D399),
+            ),
+          ),
         ),
-        _buildMetricRow(
-          label: 'INFERENCE ACCELERATION',
-          value: 'Edge Neural Perceptual Model (256-Cell Tensor)',
-          isMono: false,
+        _buildLuxuryRow(
+          label: 'Inference Engine',
+          child: Text(
+            'Edge-Native Neural Perceptual Model (256-Cell Tensor)',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white70,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  // -------------------------------------------------------------
-  // PILLAR 4 CARD: Air-Gapped Ledger Proof
-  // -------------------------------------------------------------
-  Widget _buildPillarCard4Ledger(CompleteVerificationReport report) {
+  // -------------------------------------------------------------------------
+  // PILLAR 4: Air-Gapped Ledger Anchor (Refined font style as requested!)
+  // -------------------------------------------------------------------------
+  Widget _buildPremiumPillar4Ledger(CompleteVerificationReport report) {
     final record = report.matchedRecord;
     final isUnsealed = report.verdict == VerificationVerdict.unsealed || record == null;
     final Color badgeColor = !isUnsealed ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
@@ -1148,82 +1443,129 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
       formattedDate = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} UTC';
     }
 
-    return _buildPillarContainer(
+    return _buildLuxuryCardFrame(
       icon: Icons.hub_outlined,
-      title: 'IV. AIR-GAPPED LEDGER PROOF',
+      accentColor: const Color(0xFFA855F7),
+      title: 'Pillar IV: Air-Gapped Ledger Proof',
       badgeText: badgeText,
       badgeColor: badgeColor,
-      rows: [
-        _buildMetricRow(
-          label: 'IMMUTABLE RECORD ID',
-          value: recordIdShort,
-          isMono: true,
-          copyValue: record?.id,
+      children: [
+        _buildLuxuryRow(
+          label: 'Immutable Record ID',
+          child: _buildHashChip(
+            recordIdShort,
+            copyValue: record?.id,
+            color: const Color(0xFFC084FC),
+          ),
         ),
-        _buildMetricRow(
-          label: 'ANCHOR SIGNER / ENCLAVE',
-          value: record?.ownerEmail ?? (record?.signature != null ? 'Ed25519 Hardware Device Key' : 'Local Enclave'),
-          isAlert: isUnsealed,
+        _buildLuxuryRow(
+          label: 'Anchor Signer & Enclave',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (record?.ownerEmail != null) ...[
+                const Icon(Icons.mark_email_read_rounded, size: 13, color: Color(0xFF34D399)),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                record?.ownerEmail ?? (record?.signature != null ? 'Ed25519 Hardware Device Key' : 'Local Enclave'),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: isUnsealed ? Colors.white54 : Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
-        _buildMetricRow(
-          label: 'ORIGINAL SEAL TIMESTAMP',
-          value: formattedDate,
-          isMono: true,
+        _buildLuxuryRow(
+          label: 'Original Seal Timestamp',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.access_time_rounded, size: 12, color: Color(0xFFC084FC)),
+              const SizedBox(width: 5),
+              Text(
+                formattedDate,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  // Helper container wrapper for the 4 pillars
-  Widget _buildPillarContainer({
+  // Frame container for each of the 4 pillar cards
+  Widget _buildLuxuryCardFrame({
     required IconData icon,
+    required Color accentColor,
     required String title,
     required String badgeText,
     required Color badgeColor,
-    required List<Widget> rows,
+    required List<Widget> children,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0x10FFFFFF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x1EFFFFFF)),
+        color: const Color(0xFF140E26),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x28FFFFFF), width: 1.1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x25000000),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
+          // Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 15, color: const Color(0xFFC084FC)),
-                  const SizedBox(width: 7),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                    ),
+                    child: Icon(icon, size: 14, color: accentColor),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     title,
-                    style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10.5,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
-                      letterSpacing: 0.6,
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                 decoration: BoxDecoration(
                   color: badgeColor.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.45)),
                 ),
                 child: Text(
                   badgeText,
                   style: GoogleFonts.jetBrainsMono(
-                    fontSize: 8.5,
+                    fontSize: 9,
                     fontWeight: FontWeight.w800,
                     color: badgeColor,
                   ),
@@ -1232,89 +1574,83 @@ class _VerificationPageState extends ConsumerState<VerificationPage> {
             ],
           ),
           const SizedBox(height: 10),
-          const Divider(color: Color(0x12FFFFFF), height: 1),
+          const Divider(color: Color(0x14FFFFFF), height: 1),
           const SizedBox(height: 8),
 
-          // Key-Value Rows
-          ...rows,
+          // Children Rows
+          ...children,
         ],
       ),
     );
   }
 
-  Widget _buildMetricRow({
+  // Row for a key-value metric in the cards (Refined typography with Plus Jakarta Sans labels)
+  Widget _buildLuxuryRow({
     required String label,
-    required String value,
-    bool isMono = false,
-    bool isAlert = false,
-    Color? valueColor,
-    String? copyValue,
+    required Widget child,
   }) {
-    final Color textColor = isAlert
-        ? const Color(0xFFFB7185)
-        : (valueColor ?? Colors.white);
-
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.5),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 155,
+            width: 165,
             child: Text(
               label,
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF94A3B8),
-                letterSpacing: 0.4,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFD4C8EC),
               ),
             ),
           ),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    value,
-                    style: isMono
-                        ? GoogleFonts.jetBrainsMono(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: textColor,
-                          )
-                        : GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: textColor,
-                          ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (copyValue != null) ...[
-                  const SizedBox(width: 4),
-                  InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: copyValue));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Copied: $copyValue', style: GoogleFonts.jetBrainsMono(fontSize: 11)),
-                          duration: const Duration(seconds: 1),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(4),
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(Icons.copy_rounded, size: 12, color: Color(0xFF94A3B8)),
-                    ),
-                  ),
-                ],
-              ],
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
+  // Sleek hash / ID chip with copy button
+  Widget _buildHashChip(String text, {String? copyValue, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0x0EFFFFFF),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0x18FFFFFF)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text,
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
           ),
+          if (copyValue != null) ...[
+            const SizedBox(width: 5),
+            InkWell(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: copyValue));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Copied: $copyValue', style: GoogleFonts.jetBrainsMono(fontSize: 11)),
+                    duration: const Duration(seconds: 1),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(4),
+              child: const Padding(
+                padding: EdgeInsets.all(1.5),
+                child: Icon(Icons.copy_rounded, size: 11, color: Color(0xFFB4A5D0)),
+              ),
+            ),
+          ],
         ],
       ),
     );
