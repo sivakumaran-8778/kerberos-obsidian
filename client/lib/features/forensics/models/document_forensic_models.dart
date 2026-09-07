@@ -172,13 +172,159 @@ class PdfRevisionDiff {
   bool get hasChanges => removedTokens.isNotEmpty || addedTokens.isNotEmpty;
 }
 
-/// Complete forensic evaluation report for an uploaded document
+/// Category of file being inspected by the forensic engine
+enum ForensicFileCategory {
+  document,
+  image,
+  audio,
+  video,
+  textData,
+}
+
+extension ForensicFileCategoryExtension on ForensicFileCategory {
+  String get label {
+    switch (this) {
+      case ForensicFileCategory.document:
+        return 'Document (PDF / Office)';
+      case ForensicFileCategory.image:
+        return 'Image (Visual Media)';
+      case ForensicFileCategory.audio:
+        return 'Acoustic Audio';
+      case ForensicFileCategory.video:
+        return 'Motion Video';
+      case ForensicFileCategory.textData:
+        return 'Text & Structured Data';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case ForensicFileCategory.document:
+        return Icons.description_rounded;
+      case ForensicFileCategory.image:
+        return Icons.image_rounded;
+      case ForensicFileCategory.audio:
+        return Icons.audiotrack_rounded;
+      case ForensicFileCategory.video:
+        return Icons.videocam_rounded;
+      case ForensicFileCategory.textData:
+        return Icons.data_object_rounded;
+    }
+  }
+
+  Color get themeColor {
+    switch (this) {
+      case ForensicFileCategory.document:
+        return const Color(0xFF38BDF8);
+      case ForensicFileCategory.image:
+        return const Color(0xFFC084FC);
+      case ForensicFileCategory.audio:
+        return const Color(0xFF10B981);
+      case ForensicFileCategory.video:
+        return const Color(0xFFF59E0B);
+      case ForensicFileCategory.textData:
+        return const Color(0xFF06B6D4);
+    }
+  }
+}
+
+/// Audio-specific forensic inspection details
+class AudioForensicsDetails {
+  final String audioFormat;
+  final String? audioDurationEstimate;
+  final List<String> dawFootprints;
+  final bool hasSilenceSplicing;
+  final bool hasContainerSizeDivergence;
+  final bool hasTrailingAudioPayload;
+  final int trailingBytes;
+  final String? audioIntegritySummary;
+
+  const AudioForensicsDetails({
+    required this.audioFormat,
+    this.audioDurationEstimate,
+    required this.dawFootprints,
+    this.hasSilenceSplicing = false,
+    this.hasContainerSizeDivergence = false,
+    this.hasTrailingAudioPayload = false,
+    this.trailingBytes = 0,
+    this.audioIntegritySummary,
+  });
+}
+
+/// Video-specific forensic inspection details
+class VideoForensicsDetails {
+  final String videoContainer;
+  final String? videoCodec;
+  final List<String> editorFootprints;
+  final List<String> atomHierarchy;
+  final bool hasAudioVideoDesync;
+  final int desyncDeltaMs;
+  final bool hasTrailingPayload;
+  final int trailingBytes;
+  final bool isMoovAtomValid;
+  final String? videoIntegritySummary;
+
+  const VideoForensicsDetails({
+    required this.videoContainer,
+    this.videoCodec,
+    required this.editorFootprints,
+    required this.atomHierarchy,
+    this.hasAudioVideoDesync = false,
+    this.desyncDeltaMs = 0,
+    this.hasTrailingPayload = false,
+    this.trailingBytes = 0,
+    this.isMoovAtomValid = true,
+    this.videoIntegritySummary,
+  });
+}
+
+/// Text, code, and structured data forensic inspection details
+class TextForensicsDetails {
+  final String encoding;
+  final String lineEndingProfile;
+  final int crlfCount;
+  final int lfCount;
+  final bool hasMixedLineEndings;
+  final bool hasInvisibleOrZeroWidthChars;
+  final int invisibleCharCount;
+  final bool hasHomoglyphSpoofing;
+  final List<String> homoglyphFlags;
+  final bool isCsvOrTable;
+  final bool hasCsvColumnDrift;
+  final int? expectedColumns;
+  final List<int> anomalousRows;
+  final bool isLogFile;
+  final bool hasTimestampReversal;
+  final String? logIntegritySummary;
+
+  const TextForensicsDetails({
+    required this.encoding,
+    required this.lineEndingProfile,
+    required this.crlfCount,
+    required this.lfCount,
+    required this.hasMixedLineEndings,
+    this.hasInvisibleOrZeroWidthChars = false,
+    this.invisibleCharCount = 0,
+    this.hasHomoglyphSpoofing = false,
+    this.homoglyphFlags = const [],
+    this.isCsvOrTable = false,
+    this.hasCsvColumnDrift = false,
+    this.expectedColumns,
+    this.anomalousRows = const [],
+    this.isLogFile = false,
+    this.hasTimestampReversal = false,
+    this.logIntegritySummary,
+  });
+}
+
+/// Complete forensic evaluation report for an uploaded document or media file
 class DocumentForensicReport {
   final String fileName;
   final int fileSizeBytes;
   final Uint8List fileBytes;
   final String sha256Hash;
   final String mimeType;
+  final ForensicFileCategory fileCategory;
   final DocumentForensicVerdict verdict;
   final int confidenceScore; // 0 to 100%
   final int revisionCount;
@@ -200,10 +346,13 @@ class DocumentForensicReport {
   final bool isSocialMediaCompressed;
   final String? digitalSignatureAlgorithm;
 
-  // Next-Gen Upgrades (ELA, QR Validation, PDF Stream Diff)
+  // Multi-Media Specialized Analysis
   final DocumentElaAnalysis? elaAnalysis;
   final DocumentQrValidation? qrValidation;
   final PdfRevisionDiff? revisionDiff;
+  final AudioForensicsDetails? audioForensics;
+  final VideoForensicsDetails? videoForensics;
+  final TextForensicsDetails? textForensics;
 
   const DocumentForensicReport({
     required this.fileName,
@@ -211,6 +360,7 @@ class DocumentForensicReport {
     required this.fileBytes,
     required this.sha256Hash,
     required this.mimeType,
+    this.fileCategory = ForensicFileCategory.document,
     required this.verdict,
     required this.confidenceScore,
     required this.revisionCount,
@@ -232,6 +382,9 @@ class DocumentForensicReport {
     this.elaAnalysis,
     this.qrValidation,
     this.revisionDiff,
+    this.audioForensics,
+    this.videoForensics,
+    this.textForensics,
   });
 
   bool get isTampered =>

@@ -429,4 +429,302 @@ startxref
       expect(report.revisionDiff!.summary, contains('modifications detected'));
     });
   });
+
+  group('Multi-Format Forensics - Audio, Video, & Text/Data', () {
+    // ----------------------------------------------------
+    // Audio Forensics
+    // ----------------------------------------------------
+    Uint8List createWavBytes({
+      List<String> softwareFootprints = const [],
+      bool addSilenceDrop = false,
+      int trailingBytesCount = 0,
+    }) {
+      final bytes = BytesBuilder();
+      final pcmData = Uint8List(512);
+      for (int i = 0; i < pcmData.length; i++) {
+        pcmData[i] = (i % 250) + 1;
+      }
+      if (addSilenceDrop) {
+        for (int i = 100; i < 400; i++) {
+          pcmData[i] = 0x00; // 300 consecutive zero-bytes
+        }
+      }
+
+      final fmtSize = 16;
+      final listSize = softwareFootprints.isNotEmpty ? 40 : 0;
+      final totalData = 4 + (8 + fmtSize) + (8 + pcmData.length) + (softwareFootprints.isNotEmpty ? (8 + listSize) : 0);
+
+      // RIFF header
+      bytes.add(utf8.encode('RIFF'));
+      final sizeBytes = ByteData(4)..setUint32(0, totalData, Endian.little);
+      bytes.add(sizeBytes.buffer.asUint8List());
+      bytes.add(utf8.encode('WAVE'));
+
+      // fmt chunk
+      bytes.add(utf8.encode('fmt '));
+      final fmtSizeBytes = ByteData(4)..setUint32(0, fmtSize, Endian.little);
+      bytes.add(fmtSizeBytes.buffer.asUint8List());
+      bytes.add([0x01, 0x00]); // PCM
+      bytes.add([0x01, 0x00]); // mono
+      final sampleRate = ByteData(4)..setUint32(0, 44100, Endian.little);
+      bytes.add(sampleRate.buffer.asUint8List());
+      final byteRate = ByteData(4)..setUint32(0, 88200, Endian.little);
+      bytes.add(byteRate.buffer.asUint8List());
+      bytes.add([0x02, 0x00]); // block align
+      bytes.add([0x10, 0x00]); // 16-bit
+
+      // data chunk
+      bytes.add(utf8.encode('data'));
+      final dataSizeBytes = ByteData(4)..setUint32(0, pcmData.length, Endian.little);
+      bytes.add(dataSizeBytes.buffer.asUint8List());
+      bytes.add(pcmData);
+
+      if (softwareFootprints.isNotEmpty) {
+        bytes.add(utf8.encode('LIST'));
+        final listPayload = utf8.encode('INFOISFT${softwareFootprints.join(" ")}');
+        final lSizeBytes = ByteData(4)..setUint32(0, listSize, Endian.little);
+        bytes.add(lSizeBytes.buffer.asUint8List());
+        bytes.add(listPayload);
+        if (listPayload.length < listSize) {
+          bytes.add(Uint8List(listSize - listPayload.length));
+        }
+      }
+
+      if (trailingBytesCount > 0) {
+        bytes.add(Uint8List(trailingBytesCount));
+      }
+
+      return bytes.toBytes();
+    }
+
+    test('Audio: Detects clean authentic WAV recording', () {
+      final cleanWav = createWavBytes();
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: cleanWav,
+        fileName: 'recorded_deposition.wav',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.audio));
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+      expect(report.audioForensics, isNotNull);
+      expect(report.audioForensics!.audioFormat, contains('WAV'));
+      expect(report.audioForensics!.dawFootprints, isEmpty);
+      expect(report.audioForensics!.hasSilenceSplicing, isFalse);
+      expect(report.audioForensics!.hasTrailingAudioPayload, isFalse);
+      expect(report.isTampered, isFalse);
+    });
+
+    test('Audio: Detects Audacity DAW footprint and trailing stego payload', () {
+      final tamperedWav = createWavBytes(
+        softwareFootprints: ['Audacity 3.4.2 Project Export'],
+        trailingBytesCount: 128,
+      );
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: tamperedWav,
+        fileName: 'wiretap_evidence_edited.wav',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.audio));
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.audioForensics, isNotNull);
+      expect(report.audioForensics!.dawFootprints, contains('Audacity Audio Editor'));
+      expect(report.audioForensics!.hasTrailingAudioPayload, isTrue);
+      expect(report.audioForensics!.trailingBytes, greaterThan(64));
+      expect(report.anomalies.any((a) => a.title.contains('Audacity DAW')), isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Trailing Payload')), isTrue);
+    });
+
+    test('Audio: Detects digital silence acoustic splicing dropout', () {
+      final splicedWav = createWavBytes(addSilenceDrop: true);
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: splicedWav,
+        fileName: 'call_center_audio_excised.wav',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.audio));
+      expect(report.audioForensics, isNotNull);
+      expect(report.audioForensics!.hasSilenceSplicing, isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Acoustic Silence Splicing')), isTrue);
+      expect(report.isTampered, isTrue);
+    });
+
+    // ----------------------------------------------------
+    // Video Forensics
+    // ----------------------------------------------------
+    Uint8List createMp4Bytes({
+      List<String> editorFootprints = const [],
+      bool includeDesync = false,
+      int trailingBytesCount = 0,
+    }) {
+      final bytes = BytesBuilder();
+
+      // ftyp atom
+      final ftypPayload = utf8.encode('mp42\x00\x00\x02\x00isommp42');
+      final ftypSize = ByteData(4)..setUint32(0, 8 + ftypPayload.length, Endian.big);
+      bytes.add(ftypSize.buffer.asUint8List());
+      bytes.add(utf8.encode('ftyp'));
+      bytes.add(ftypPayload);
+
+      // moov atom
+      String moovString = 'mvhd...trak...mdia...minf...stbl';
+      if (editorFootprints.isNotEmpty) {
+        moovString += '...${editorFootprints.join(" ")}...';
+      }
+      if (includeDesync) {
+        moovString += '...desync...cut_frames...';
+      }
+      final moovPayload = utf8.encode(moovString);
+      final moovSize = ByteData(4)..setUint32(0, 8 + moovPayload.length, Endian.big);
+      bytes.add(moovSize.buffer.asUint8List());
+      bytes.add(utf8.encode('moov'));
+      bytes.add(moovPayload);
+
+      // mdat atom
+      final mdatPayload = Uint8List(120);
+      final mdatSize = ByteData(4)..setUint32(0, 8 + mdatPayload.length, Endian.big);
+      bytes.add(mdatSize.buffer.asUint8List());
+      bytes.add(utf8.encode('mdat'));
+      bytes.add(mdatPayload);
+
+      if (trailingBytesCount > 0) {
+        bytes.add(Uint8List(trailingBytesCount));
+      }
+
+      return bytes.toBytes();
+    }
+
+    test('Video: Detects clean authentic MP4 container', () {
+      final cleanMp4 = createMp4Bytes();
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: cleanMp4,
+        fileName: 'dashcam_footage_original.mp4',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.video));
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+      expect(report.videoForensics, isNotNull);
+      expect(report.videoForensics!.editorFootprints, isEmpty);
+      expect(report.videoForensics!.isMoovAtomValid, isTrue);
+      expect(report.videoForensics!.hasAudioVideoDesync, isFalse);
+      expect(report.isTampered, isFalse);
+    });
+
+    test('Video: Detects Adobe Premiere Pro NLE footprints and A/V track desync', () {
+      final tamperedMp4 = createMp4Bytes(
+        editorFootprints: ['Adobe Premiere Pro CC 2024 (Macintosh)'],
+        includeDesync: true,
+      );
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: tamperedMp4,
+        fileName: 'cctv_surveillance_spliced.mp4',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.video));
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.videoForensics, isNotNull);
+      expect(report.videoForensics!.editorFootprints, contains('Adobe Premiere Pro'));
+      expect(report.videoForensics!.hasAudioVideoDesync, isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Adobe Premiere Pro')), isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Audio/Video Track Timeline Asymmetry')), isTrue);
+    });
+
+    test('Video: Detects trailing stego payload past container atoms', () {
+      final trailingMp4 = createMp4Bytes(trailingBytesCount: 200);
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: trailingMp4,
+        fileName: 'police_bodycam_injected.mp4',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.video));
+      expect(report.videoForensics, isNotNull);
+      expect(report.videoForensics!.hasTrailingPayload, isTrue);
+      expect(report.videoForensics!.trailingBytes, greaterThan(64));
+      expect(report.anomalies.any((a) => a.title.contains('Trailing Injected Video Payload')), isTrue);
+    });
+
+    // ----------------------------------------------------
+    // Text & Structured Data Forensics
+    // ----------------------------------------------------
+    test('Text: Detects clean authentic plain text document', () {
+      final cleanText = 'Project Kerberos Security Audit\nAll system hashes verified.\nMonitored ledger active.\n';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(cleanText)),
+        fileName: 'security_brief.txt',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.textData));
+      expect(report.verdict, equals(DocumentForensicVerdict.authenticOriginal));
+      expect(report.textForensics, isNotNull);
+      expect(report.textForensics!.hasMixedLineEndings, isFalse);
+      expect(report.textForensics!.hasInvisibleOrZeroWidthChars, isFalse);
+      expect(report.isTampered, isFalse);
+    });
+
+    test('Text: Detects mixed CRLF & LF line-ending injection anomaly', () {
+      final mixedText = 'Line 1 Windows CRLF\r\nLine 2 Windows CRLF\r\nLine 3 Injected Unix LF\nLine 4 Windows CRLF\r\n';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(mixedText)),
+        fileName: 'contract_terms.txt',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.textData));
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.textForensics, isNotNull);
+      expect(report.textForensics!.hasMixedLineEndings, isTrue);
+      expect(report.textForensics!.crlfCount, greaterThan(0));
+      expect(report.textForensics!.lfCount, greaterThan(0));
+      expect(report.anomalies.any((a) => a.title.contains('Mixed Line-Ending Injection')), isTrue);
+    });
+
+    test('Text: Detects zero-width steganography and Trojan Source characters', () {
+      final stegoText = 'Verified payment to account 123456\u200B\u200C\u202E malicious hidden code payload';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(stegoText)),
+        fileName: 'payment_instruction.txt',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.textData));
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.textForensics, isNotNull);
+      expect(report.textForensics!.hasInvisibleOrZeroWidthChars, isTrue);
+      expect(report.textForensics!.invisibleCharCount, equals(3));
+      expect(report.anomalies.any((a) => a.title.contains('Invisible Unicode')), isTrue);
+    });
+
+    test('Text: Detects CSV column count regularity drift on injected row', () {
+      final csvText = 'Date,Description,Amount,Status\n2024-01-01,Service Fee,150.00,PAID\n2024-01-02,Consultation,300.00,PAID\n2024-01-03,Embezzled Refund,50000.00,INJECTED,EXTRA_UNAUTHORIZED_COL\n';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(csvText)),
+        fileName: 'financial_ledger.csv',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.textData));
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.textForensics, isNotNull);
+      expect(report.textForensics!.isCsvOrTable, isTrue);
+      expect(report.textForensics!.hasCsvColumnDrift, isTrue);
+      expect(report.textForensics!.anomalousRows, contains(4));
+      expect(report.anomalies.any((a) => a.title.contains('CSV Delimiter / Column Count Drift')), isTrue);
+    });
+
+    test('Text: Detects log timestamp chronological inversion', () {
+      final logText = '''
+2024-03-01 10:00:00 [INFO] System boot initialised
+2024-03-01 10:15:00 [INFO] User admin logged in
+2024-03-01 09:45:00 [WARN] Out-of-order spliced tamper attempt
+2024-03-01 10:30:00 [INFO] Backup routine completed
+''';
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: Uint8List.fromList(utf8.encode(logText)),
+        fileName: 'audit_trail.log',
+      );
+
+      expect(report.fileCategory, equals(ForensicFileCategory.textData));
+      expect(report.verdict, equals(DocumentForensicVerdict.tamperedEdited));
+      expect(report.textForensics, isNotNull);
+      expect(report.textForensics!.isLogFile, isTrue);
+      expect(report.textForensics!.hasTimestampReversal, isTrue);
+      expect(report.anomalies.any((a) => a.title.contains('Chronological Inversion')), isTrue);
+    });
+  });
 }

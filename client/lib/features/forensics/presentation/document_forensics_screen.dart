@@ -46,7 +46,12 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'tiff', 'docx'],
+        allowedExtensions: [
+          'pdf', 'png', 'jpg', 'jpeg', 'webp', 'tiff', 'docx',
+          'wav', 'mp3', 'm4a', 'flac', 'ogg', 'aac',
+          'mp4', 'mov', 'mkv', 'avi', 'webm',
+          'txt', 'csv', 'json', 'log', 'xml', 'md',
+        ],
         withData: true,
       );
 
@@ -123,6 +128,18 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 if (_report!.qrValidation != null) ...[
                   const SizedBox(height: 20),
                   _buildQrValidationSection(_report!.qrValidation!),
+                ],
+                if (_report!.audioForensics != null) ...[
+                  const SizedBox(height: 24),
+                  _buildAudioForensicsSection(_report!.audioForensics!),
+                ],
+                if (_report!.videoForensics != null) ...[
+                  const SizedBox(height: 24),
+                  _buildVideoForensicsSection(_report!.videoForensics!),
+                ],
+                if (_report!.textForensics != null) ...[
+                  const SizedBox(height: 24),
+                  _buildTextForensicsSection(_report!.textForensics!),
                 ],
                 const SizedBox(height: 24),
                 _buildDocumentHistoryTimeline(),
@@ -302,7 +319,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Supports Medical Bills, Government IDs, Certificates, Invoices, PDFs, Scans, & Images',
+                  'Supports Medical Bills, IDs, Invoices, Audio (WAV/MP3), Video (MP4/MKV), CSV, Logs, & Text Data',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
@@ -321,7 +338,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                       const Icon(Icons.upload_file_rounded, size: 18),
                       const SizedBox(width: 8),
                       Text(
-                        'SELECT DOCUMENT OR SCAN',
+                        'SELECT ANY DOCUMENT / MULTIMEDIA',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -337,11 +354,11 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                   runSpacing: 8,
                   alignment: WrapAlignment.center,
                   children: [
-                    _buildPillTag('PDF'),
-                    _buildPillTag('PNG'),
-                    _buildPillTag('JPEG'),
-                    _buildPillTag('TIFF'),
-                    _buildPillTag('WEBP'),
+                    _buildPillTag('PDF / SCAN'),
+                    _buildPillTag('IMAGE (PNG/JPG)'),
+                    _buildPillTag('AUDIO (WAV/MP3/M4A)'),
+                    _buildPillTag('VIDEO (MP4/MKV)'),
+                    _buildPillTag('TEXT / CSV / LOG'),
                   ],
                 ),
               ],
@@ -499,8 +516,31 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             children: [
               Row(
                 children: [
-                  const Icon(Icons.description_outlined, size: 18, color: CyberTheme.shardColor),
-                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: report.fileCategory.themeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: report.fileCategory.themeColor.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(report.fileCategory.icon, size: 12, color: report.fileCategory.themeColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          report.fileCategory.label.toUpperCase(),
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: report.fileCategory.themeColor,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   Flexible(
                     child: Text(
                       report.fileName,
@@ -1800,5 +1840,538 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
 
   String _formatDate(DateTime dt) {
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} UTC';
+  }
+
+  // ==========================================
+  // MULTIMEDIA & DATA FORENSIC SECTIONS
+  // ==========================================
+
+  Widget _buildAudioForensicsSection(AudioForensicsDetails audio) {
+    final hasAnomaly = audio.dawFootprints.isNotEmpty ||
+        audio.hasSilenceSplicing ||
+        audio.hasTrailingAudioPayload ||
+        audio.hasContainerSizeDivergence;
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: CyberTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasAnomaly ? const Color(0x66F59E0B) : const Color(0x3310B981),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981)).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.graphic_eq_rounded,
+                  size: 20,
+                  color: hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ACOUSTIC & CONTAINER FORENSICS',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                        color: hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                      ),
+                    ),
+                    Text(
+                      'Audio Stream Integrity & DAW Footprint Inspection',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x22FFFFFF)),
+                ),
+                child: Text(
+                  audio.audioFormat,
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (audio.dawFootprints.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0x1EF43F5E),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x44F43F5E)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFF43F5E)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Digital Audio Workstation (DAW) Artifacts: ${audio.dawFootprints.join(", ")} detected in container chunks.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFFCA5A5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildForensicMetricCard(
+                label: 'STREAM DURATION',
+                value: audio.audioDurationEstimate ?? 'Unknown',
+                subtext: 'Calculated byte-rate estimate',
+                color: const Color(0xFF38BDF8),
+              ),
+              _buildForensicMetricCard(
+                label: 'SILENCE / SPLICING',
+                value: audio.hasSilenceSplicing ? 'SPLICING DETECTED' : 'CONTINUOUS ACOUSTICS',
+                subtext: audio.hasSilenceSplicing ? 'Zero-byte amplitude drops found' : 'No artificial zero-drops',
+                color: audio.hasSilenceSplicing ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+              ),
+              _buildForensicMetricCard(
+                label: 'CONTAINER EOF BOUNDARY',
+                value: audio.hasTrailingAudioPayload ? '${audio.trailingBytes}B TRAILING' : 'STRICTLY ALIGNED',
+                subtext: audio.hasTrailingAudioPayload ? 'Hidden payload / stego data' : 'Valid RIFF/MPEG boundaries',
+                color: audio.hasTrailingAudioPayload ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+              ),
+            ],
+          ),
+          if (audio.audioIntegritySummary != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              audio.audioIntegritySummary!,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: CyberTheme.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoForensicsSection(VideoForensicsDetails video) {
+    final hasAnomaly = video.editorFootprints.isNotEmpty ||
+        video.hasAudioVideoDesync ||
+        video.hasTrailingPayload ||
+        !video.isMoovAtomValid;
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: CyberTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasAnomaly ? const Color(0x66F59E0B) : const Color(0x3310B981),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981)).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.movie_filter_rounded,
+                  size: 20,
+                  color: hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CONTAINER ATOM & NLE STREAM FORENSICS',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                        color: hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                      ),
+                    ),
+                    Text(
+                      'Video Track Continuity & Re-Encoding Analysis',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x22FFFFFF)),
+                ),
+                child: Text(
+                  video.videoContainer,
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (video.editorFootprints.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0x1EF43F5E),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x44F43F5E)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFF43F5E)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Non-Linear Video Editor (NLE) Footprints: ${video.editorFootprints.join(", ")} detected in container metadata.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFFCA5A5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildForensicMetricCard(
+                label: 'ATOM HIERARCHY',
+                value: video.atomHierarchy.isNotEmpty ? video.atomHierarchy.take(4).join(' > ') : 'STANDARD',
+                subtext: video.isMoovAtomValid ? 'Valid moov/mdat sequence' : 'Corrupted or re-ordered atoms',
+                color: video.isMoovAtomValid ? const Color(0xFF10B981) : const Color(0xFFF43F5E),
+              ),
+              _buildForensicMetricCard(
+                label: 'A/V TRACK SYNC',
+                value: video.hasAudioVideoDesync ? '${video.desyncDeltaMs}ms DESYNC' : 'SYNCHRONIZED',
+                subtext: video.hasAudioVideoDesync ? 'Track splicing length divergence' : 'Coincident audio/video streams',
+                color: video.hasAudioVideoDesync ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+              ),
+              _buildForensicMetricCard(
+                label: 'EOF PAYLOAD INTEGRITY',
+                value: video.hasTrailingPayload ? '${video.trailingBytes}B TRAILING' : 'STRICTLY BOUNDED',
+                subtext: video.hasTrailingPayload ? 'Stego injection past container' : 'No trailing bytes past atoms',
+                color: video.hasTrailingPayload ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+              ),
+            ],
+          ),
+          if (video.videoIntegritySummary != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              video.videoIntegritySummary!,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: CyberTheme.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextForensicsSection(TextForensicsDetails text) {
+    final hasAnomaly = text.hasMixedLineEndings ||
+        text.hasInvisibleOrZeroWidthChars ||
+        text.hasHomoglyphSpoofing ||
+        text.hasCsvColumnDrift ||
+        text.hasTimestampReversal;
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: CyberTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasAnomaly ? const Color(0x66F59E0B) : const Color(0x3310B981),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981)).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.data_object_rounded,
+                  size: 20,
+                  color: hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TEXT & STRUCTURED DATA FORENSICS',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                        color: hasAnomaly ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                      ),
+                    ),
+                    Text(
+                      'Encoding, Steganography, & Structural Consistency',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x22FFFFFF)),
+                ),
+                child: Text(
+                  text.encoding,
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (text.hasInvisibleOrZeroWidthChars) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0x1EF43F5E),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x44F43F5E)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.security_rounded, size: 18, color: Color(0xFFF43F5E)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Invisible Unicode / Steganography: ${text.invisibleCharCount} zero-width or Trojan Source control characters detected.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFFCA5A5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          if (text.hasHomoglyphSpoofing) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0x1EF59E0B),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x44F59E0B)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.spellcheck_rounded, size: 18, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Homoglyph Confusable Attack: Mixed script characters detected (${text.homoglyphFlags.join(", ")}).',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFFCD34D),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildForensicMetricCard(
+                label: 'LINE ENDINGS',
+                value: text.hasMixedLineEndings ? 'MIXED CRLF & LF' : text.lineEndingProfile,
+                subtext: text.hasMixedLineEndings ? 'Potential multi-source paste injection' : 'Consistent across entire payload',
+                color: text.hasMixedLineEndings ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+              ),
+              if (text.isCsvOrTable)
+                _buildForensicMetricCard(
+                  label: 'CSV COLUMN INTEGRITY',
+                  value: text.hasCsvColumnDrift ? 'DRIFT IN ROW ${text.anomalousRows.take(2).join(",")}' : 'UNIFORM (${text.expectedColumns ?? 0} COLS)',
+                  subtext: text.hasCsvColumnDrift ? 'Injected/missing column fields' : 'All rows match schema regularity',
+                  color: text.hasCsvColumnDrift ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                ),
+              if (text.isLogFile)
+                _buildForensicMetricCard(
+                  label: 'LOG CHRONOLOGY',
+                  value: text.hasTimestampReversal ? 'REVERSAL DETECTED' : 'STRICT MONOTONIC',
+                  subtext: text.hasTimestampReversal ? 'Out-of-order log splicing' : 'Timestamps advance chronologically',
+                  color: text.hasTimestampReversal ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                ),
+              if (!text.isCsvOrTable && !text.isLogFile)
+                _buildForensicMetricCard(
+                  label: 'UNICODE SANITIZATION',
+                  value: text.hasInvisibleOrZeroWidthChars ? 'DIRTY (${text.invisibleCharCount} HIDDEN)' : 'CLEAN (0 HIDDEN)',
+                  subtext: text.hasInvisibleOrZeroWidthChars ? 'Hidden stego payload' : 'Pure printable glyphs',
+                  color: text.hasInvisibleOrZeroWidthChars ? const Color(0xFFF43F5E) : const Color(0xFF10B981),
+                ),
+            ],
+          ),
+          if (text.logIntegritySummary != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              text.logIntegritySummary!,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: CyberTheme.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForensicMetricCard({
+    required String label,
+    required String value,
+    required String subtext,
+    required Color color,
+  }) {
+    return Container(
+      width: 200,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0x0CFFFFFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x1EFFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: CyberTheme.textMuted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  value,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtext,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              color: CyberTheme.textSecondary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
   }
 }
