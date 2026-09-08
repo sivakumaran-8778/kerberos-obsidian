@@ -730,13 +730,13 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         );
 
         final zkRedactButton = CyberButton(
-          variant: CyberButtonVariant.solid,
+          variant: CyberButtonVariant.primary,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           onTap: () async {
             try {
               final result = await CryptoEngineWeb.generateRedactionProof(
-                  report.originalFileBytes ?? Uint8List(0), 
+                  report.fileBytes ?? Uint8List(0), 
                   {'x': 10, 'y': 10, 'width': 100, 'height': 100});
               
               if (context.mounted) {
@@ -774,13 +774,13 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         );
 
         final evaluateProvenanceButton = CyberButton(
-          variant: CyberButtonVariant.solid,
+          variant: CyberButtonVariant.primary,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           onTap: () async {
             try {
               final result = await CryptoEngineWeb.evaluateProvenance(
-                  report.originalFileBytes ?? Uint8List(0), 
+                  report.fileBytes ?? Uint8List(0), 
                   {'issuer': 'Content Authenticity Initiative', 'manifestHash': report.sha256Hash});
               
               if (context.mounted) {
