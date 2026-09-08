@@ -21,6 +21,7 @@ import '../../ledger/services/ledger_service.dart';
 import '../../ledger/models/provenance_record.dart';
 import '../../verification/presentation/verification_page.dart';
 import '../../forensics/presentation/document_forensics_screen.dart';
+import '../../ai_detection/presentation/ai_detection_screen.dart';
 import '../../radar/presentation/radar_page.dart';
 import '../../radar/providers/radar_providers.dart';
 import '../../radar/services/p2p_session_service.dart';
@@ -35,6 +36,7 @@ enum ActiveDeckModal {
   radar,
   ledger,
   docForensics,
+  aiDetection,
   profile,
 }
 
@@ -140,6 +142,9 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
           _activeModal = ActiveDeckModal.docForensics;
           break;
         case 6:
+          _activeModal = ActiveDeckModal.aiDetection;
+          break;
+        case 7:
           _activeModal = ActiveDeckModal.profile;
           break;
       }
@@ -1054,7 +1059,18 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                           child: const DocumentForensicsScreen(),
                         ),
 
-                        // Page 6: Dedicated User Profile Page
+                        // Page 6: Enterprise AI Content & Deepfake Scanner
+                        _buildPageLayout(
+                          title: 'ENTERPRISE AI CONTENT & DEEPFAKE SCANNER',
+                          icon: Icons.psychology_rounded,
+                          badge: 'HYBRID 95%+ MULTIMODAL FORENSICS (GEMINI 2.5 FLASH)',
+                          description:
+                              'Multi-modal synthetic media detection across images, video, and documents. Evaluates C2PA provenance, 2D FFT spectral deconvolution, syntactic burstiness, and multimodal neural verification.',
+                          isMobile: isMobile,
+                          child: const AiDetectionScreen(),
+                        ),
+
+                        // Page 7: Dedicated User Profile Page
                         _buildUserProfilePage(userProfile),
                       ],
                     ),
@@ -1096,8 +1112,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         return 4; // Ledger
       case ActiveDeckModal.docForensics:
         return 5; // Forensics
+      case ActiveDeckModal.aiDetection:
+        return 6; // AI Scan
       case ActiveDeckModal.profile:
-        return -1; // None of the 6 tabs is active
+        return -1; // None of the 7 tabs is active
     }
   }
 
@@ -1115,8 +1133,10 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         return 4; // Ledger
       case ActiveDeckModal.docForensics:
         return 5; // Document Forensics
+      case ActiveDeckModal.aiDetection:
+        return 6; // AI Detection
       case ActiveDeckModal.profile:
-        return 6; // User Profile
+        return 7; // User Profile
     }
   }
 
@@ -1126,7 +1146,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
   Widget _buildNavSegmentedControl() {
     const double tabWidth = 76.0;
     const double tabHeight = 36.0;
-    final activeIndex = _activeNavIndex; // 0, 1, 2, 3, 4, 5, or -1
+    final activeIndex = _activeNavIndex; // 0, 1, 2, 3, 4, 5, 6, or -1
 
     return Container(
       padding: const EdgeInsets.all(3.0),
@@ -1136,7 +1156,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         border: Border.all(color: const Color(0x24FFFFFF), width: 1.0),
       ),
       child: SizedBox(
-        width: tabWidth * 6,
+        width: tabWidth * 7,
         height: tabHeight,
         child: Stack(
           children: [
@@ -1229,6 +1249,11 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   'Forensics',
                   5,
                   () => _navigateToPage(5),
+                ),
+                _buildNavTabItem(
+                  'AI Scan',
+                  6,
+                  () => _navigateToPage(6),
                 ),
               ],
             ),
@@ -1441,6 +1466,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
       (index: 3, title: 'Radar', icon: Icons.radar_rounded),
       (index: 4, title: 'Ledger', icon: Icons.lock_clock_rounded),
       (index: 5, title: 'Forensics', icon: Icons.document_scanner_rounded),
+      (index: 6, title: 'AI Scan', icon: Icons.psychology_rounded),
     ];
 
     return Container(
