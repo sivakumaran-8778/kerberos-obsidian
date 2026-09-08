@@ -1875,6 +1875,36 @@ class DocumentForensicService {
       }
     }
 
+    // Extract Ink strokes from /Subtype /Ink annotations
+    final parsedStrokes = <({List<({double x, double y})> points, int r, int g, int b})>[];
+    final inkBlocks = RegExp(r'/Subtype\s*/Ink([\s\S]*?)(?:/Subtype|/Annots|/Page|trailer|%%EOF|$)').allMatches(rawAscii);
+    for (final ib in inkBlocks) {
+      final snippet = ib.group(0)!;
+      final cMatch = RegExp(r'/C\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]').firstMatch(snippet);
+      final cr = ((double.tryParse(cMatch?.group(1) ?? '0.1') ?? 0.1) * 255).clamp(0, 255).toInt();
+      final cg = ((double.tryParse(cMatch?.group(2) ?? '0.3') ?? 0.3) * 255).clamp(0, 255).toInt();
+      final cb = ((double.tryParse(cMatch?.group(3) ?? '0.8') ?? 0.8) * 255).clamp(0, 255).toInt();
+
+      final inkListMatch = RegExp(r'/InkList\s*\[([\s\S]*?)\]\s*(?:/|>>)').firstMatch(snippet);
+      if (inkListMatch != null) {
+        final subpaths = RegExp(r'\[\s*([-\d\.\s]+)\s*\]').allMatches(inkListMatch.group(1)!);
+        for (final sp in subpaths) {
+          final rawNums = RegExp(r'[-\d\.]+').allMatches(sp.group(1)!).map((m) => double.tryParse(m.group(0)!) ?? 0.0).toList();
+          if (rawNums.length >= 4) {
+            final pts = <({double x, double y})>[];
+            for (int i = 0; i < rawNums.length - 1; i += 2) {
+              final x = rawNums[i];
+              final y = rawNums[i + 1];
+              pts.add((x: x, y: y));
+              // Mark macro area along the actual stroke trajectory
+              markArea(x - 6, y - 6, 12, 12);
+            }
+            parsedStrokes.add((points: pts, r: cr, g: cg, b: cb));
+          }
+        }
+      }
+    }
+
     final annotRectRegex = RegExp(r'/Rect\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]');
     final parsedAnnotations = <({double x1, double y1, double x2, double y2, String subtype, int r, int g, int b, String? text})>[];
 
@@ -1885,6 +1915,13 @@ class DocumentForensicService {
 
       // Skip off-screen / popup comment sidebars
       if (snippet.contains('/Subtype/Popup') || snippet.contains('/Subtype /Popup')) {
+        continue;
+      }
+
+      // If this annotation is an Ink stroke and we already parsed its exact stroke paths,
+      // skip calling markArea on the giant bounding box to avoid false macro grid inflation!
+      final isInk = snippet.contains('/Subtype/Ink') || snippet.contains('/Subtype /Ink');
+      if (isInk && parsedStrokes.isNotEmpty) {
         continue;
       }
 
@@ -2135,17 +2172,71 @@ class DocumentForensicService {
             }
           }
         }
+      }
 
-        // Draw visible annotations (ink strokes, highlighter bands, text notes)
+      final heatMap = Float32List(canvasW * canvasH);
+
+      // 1. Draw continuous handwritten ink strokes (signatures, scribbles, pen notes)
+        for (final stroke in parsedStrokes) {
+          final pts = stroke.points;
+          for (int i = 0; i < pts.length - 1; i++) {
+            final p0 = pts[i];
+            final p1 = pts[i + 1];
+            final p0x = ((p0.x / pageWidth) * canvasW).round().clamp(0, canvasW - 1);
+            final p0y = ((1.0 - p0.y / pageHeight) * canvasH).round().clamp(0, canvasH - 1);
+            final p1x = ((p1.x / pageWidth) * canvasW).round().clamp(0, canvasW - 1);
+            final p1y = ((1.0 - p1.y / pageHeight) * canvasH).round().clamp(0, canvasH - 1);
+
+            final dx = p1x - p0x;
+            final dy = p1y - p0y;
+            final steps = math.max(dx.abs(), dy.abs());
+            if (steps == 0) continue;
+            final xInc = dx / steps;
+            final yInc = dy / steps;
+            double curX = p0x.toDouble();
+            double curY = p0y.toDouble();
+
+            for (int s = 0; s <= steps; s++) {
+              final ix = curX.round().clamp(0, canvasW - 1);
+              final iy = curY.round().clamp(0, canvasH - 1);
+
+              // 2-pixel stroke on visual docCanvas with actual annotation color
+              for (int ox = -1; ox <= 1; ox++) {
+                for (int oy = -1; oy <= 1; oy++) {
+                  final sx = (ix + ox).clamp(0, canvasW - 1);
+                  final sy = (iy + oy).clamp(0, canvasH - 1);
+                  docCanvas.setPixelRgb(sx, sy, stroke.r, stroke.g, stroke.b);
+                }
+              }
+
+              // Thick thermal energy core (radius 3) on heatMap (peak energy 1.0)
+              for (int ox = -3; ox <= 3; ox++) {
+                for (int oy = -3; oy <= 3; oy++) {
+                  if (ox * ox + oy * oy <= 9) {
+                    final sx = (ix + ox).clamp(0, canvasW - 1);
+                    final sy = (iy + oy).clamp(0, canvasH - 1);
+                    final idx = sy * canvasW + sx;
+                    heatMap[idx] = math.min(1.0, heatMap[idx] + 0.5);
+                  }
+                }
+              }
+
+              curX += xInc;
+              curY += yInc;
+            }
+          }
+        }
+
+        // 2. Draw and thermalize visible annotations (highlighters, text notes, boxes)
         for (final annot in parsedAnnotations) {
           final ax1 = ((annot.x1 / pageWidth) * canvasW).round().clamp(0, canvasW - 1);
           final ax2 = ((annot.x2 / pageWidth) * canvasW).round().clamp(ax1 + 1, canvasW);
           final ayTop = ((1.0 - annot.y2 / pageHeight) * canvasH).round().clamp(0, canvasH - 1);
           final ayBottom = ((1.0 - annot.y1 / pageHeight) * canvasH).round().clamp(ayTop + 1, canvasH);
-          final aw = ax2 - ax1;
-          final ah = ayBottom - ayTop;
+          final isHighlight = annot.subtype.toLowerCase().contains('highlight');
+          final isFreeText = annot.subtype.toLowerCase().contains('freetext');
 
-          if (annot.subtype.toLowerCase().contains('highlight')) {
+          if (isHighlight) {
             for (int px = ax1; px < ax2; px++) {
               for (int py = ayTop; py < ayBottom; py++) {
                 final cur = docCanvas.getPixel(px, py);
@@ -2153,51 +2244,103 @@ class DocumentForensicService {
                 final mixedG = ((cur.g * 0.3) + (annot.g * 0.7)).toInt().clamp(0, 255);
                 final mixedB = ((cur.b * 0.3) + (annot.b * 0.7)).toInt().clamp(0, 255);
                 docCanvas.setPixelRgb(px, py, mixedR, mixedG, mixedB);
+
+                final idx = py * canvasW + px;
+                heatMap[idx] = math.max(heatMap[idx], 0.85);
               }
             }
-          } else if (annot.subtype.toLowerCase().contains('freetext')) {
+          } else if (isFreeText) {
             for (int px = ax1; px < ax2; px++) {
               for (int py = ayTop; py < ayBottom; py++) {
-                docCanvas.setPixelRgb(px, py, annot.r, annot.g, annot.b);
+                if (px == ax1 || px == ax2 - 1 || py == ayTop || py == ayBottom - 1) {
+                  docCanvas.setPixelRgb(px, py, annot.r, annot.g, annot.b);
+                }
+                final idx = py * canvasW + px;
+                heatMap[idx] = math.max(heatMap[idx], 0.95);
               }
             }
           } else {
-            // Ink drawings and signatures - render perimeter and dynamic stroke lines
+            // General bounding annotations
             for (int px = ax1; px < ax2; px++) {
-              docCanvas.setPixelRgb(px, ayTop, annot.r, annot.g, annot.b);
-              if (ayBottom - 1 < canvasH) {
-                docCanvas.setPixelRgb(px, ayBottom - 1, annot.r, annot.g, annot.b);
-              }
-            }
-            for (int py = ayTop; py < ayBottom; py++) {
-              docCanvas.setPixelRgb(ax1, py, annot.r, annot.g, annot.b);
-              if (ax2 - 1 < canvasW) {
-                docCanvas.setPixelRgb(ax2 - 1, py, annot.r, annot.g, annot.b);
-              }
-            }
-            if (aw > 16 && ah > 16) {
-              final step = math.max(2, (ah ~/ 5));
-              for (int py = ayTop + step; py < ayBottom; py += step) {
-                for (int px = ax1 + 2; px < ax2 - 2; px += 3) {
+              for (int py = ayTop; py < ayBottom; py++) {
+                if (px == ax1 || px == ax2 - 1 || py == ayTop || py == ayBottom - 1) {
                   docCanvas.setPixelRgb(px, py, annot.r, annot.g, annot.b);
                 }
+                final idx = py * canvasW + px;
+                heatMap[idx] = math.max(heatMap[idx], 0.80);
               }
             }
           }
         }
-      }
 
-      for (int py = 0; py < canvasH; py++) {
-        final bY = (py * 16 ~/ canvasH).clamp(0, 15);
-        for (int px = 0; px < canvasW; px++) {
-          final bX = (px * 16 ~/ canvasW).clamp(0, 15);
-          final val = tensor[bY * 16 + bX];
-          final (tr, tg, tb) = _getThermalRgb(val);
-          final alpha = (val > 0.45 ? (val * 220).toInt().clamp(60, 230) : 0);
-          thermalCanvas.setPixelRgba(px, py, tr, tg, tb, alpha);
+      final bool hasVectorActivity = parsedStrokes.isNotEmpty || parsedAnnotations.isNotEmpty;
 
-          final amp = (val * 255).toInt().clamp(0, 255);
-          elaCanvas.setPixelRgb(px, py, amp, (amp * 0.7).toInt(), (amp * 0.4).toInt());
+      if (hasVectorActivity) {
+        // High-precision Gaussian thermal radiation aura hugging actual ink & text
+        final blurred = Float32List(canvasW * canvasH);
+        final temp = Float32List(canvasW * canvasH);
+        const kWeights = [1, 2, 3, 4, 3, 2, 1];
+        const kSum = 16.0;
+
+        // Horizontal blur pass
+        for (int y = 0; y < canvasH; y++) {
+          final rowOff = y * canvasW;
+          for (int x = 0; x < canvasW; x++) {
+            double acc = 0.0;
+            for (int k = -3; k <= 3; k++) {
+              final kx = (x + k).clamp(0, canvasW - 1);
+              acc += heatMap[rowOff + kx] * kWeights[k + 3];
+            }
+            temp[rowOff + x] = acc / kSum;
+          }
+        }
+
+        // Vertical blur pass
+        for (int y = 0; y < canvasH; y++) {
+          final rowOff = y * canvasW;
+          for (int x = 0; x < canvasW; x++) {
+            double acc = 0.0;
+            for (int k = -3; k <= 3; k++) {
+              final ky = (y + k).clamp(0, canvasH - 1);
+              acc += temp[ky * canvasW + x] * kWeights[k + 3];
+            }
+            blurred[rowOff + x] = acc / kSum;
+          }
+        }
+
+        // Render false-color thermal aura with zero background tint on clean paper
+        for (int py = 0; py < canvasH; py++) {
+          final rowOff = py * canvasW;
+          for (int px = 0; px < canvasW; px++) {
+            final v = blurred[rowOff + px];
+            if (v > 0.04) {
+              final (tr, tg, tb) = _getThermalRgb(v);
+              final alpha = (math.min(235.0, 40.0 + v * 200.0)).toInt();
+              thermalCanvas.setPixelRgba(px, py, tr, tg, tb, alpha);
+
+              final amp = (v * 255).toInt().clamp(0, 255);
+              elaCanvas.setPixelRgb(px, py, amp, (amp * 0.7).toInt(), (amp * 0.4).toInt());
+            } else {
+              // Pristine unedited paper - 100% transparent overlay!
+              thermalCanvas.setPixelRgba(px, py, 0, 0, 0, 0);
+              elaCanvas.setPixelRgb(px, py, 15, 18, 24);
+            }
+          }
+        }
+      } else {
+        // Fallback for raster/stream tampering with no vector annotations
+        for (int py = 0; py < canvasH; py++) {
+          final bY = (py * 16 ~/ canvasH).clamp(0, 15);
+          for (int px = 0; px < canvasW; px++) {
+            final bX = (px * 16 ~/ canvasW).clamp(0, 15);
+            final val = tensor[bY * 16 + bX];
+            final (tr, tg, tb) = _getThermalRgb(val);
+            final alpha = (val > 0.45 ? (val * 220).toInt().clamp(60, 230) : 0);
+            thermalCanvas.setPixelRgba(px, py, tr, tg, tb, alpha);
+
+            final amp = (val * 255).toInt().clamp(0, 255);
+            elaCanvas.setPixelRgb(px, py, amp, (amp * 0.7).toInt(), (amp * 0.4).toInt());
+          }
         }
       }
 
