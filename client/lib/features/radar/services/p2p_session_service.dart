@@ -11,6 +11,8 @@ import '../../network/services/webrtc_service.dart';
 import '../../network/services/signaling_service.dart';
 import '../../ledger/services/ledger_service.dart';
 import '../../ledger/models/provenance_record.dart';
+import '../../forensics/services/document_forensic_service.dart';
+import '../../forensics/models/document_forensic_models.dart';
 import '../models/radar_models.dart';
 
 enum P2PSessionState {
@@ -528,15 +530,72 @@ class P2PSessionService extends ChangeNotifier {
       final sha256Hash = sha256.convert(fileBytes).toString();
 
       // 2. Check if this asset was previously sealed in the provenance ledger
-      ProvenanceRecord? existingRecord;
+      ProvenanceRecord? sealedRecordByName;
+      ProvenanceRecord? sealedRecordByHash;
       try {
-        existingRecord = _ledger.getRecordByHash(sha256Hash) ?? _ledger.getRecordByFileName(fileName);
+        sealedRecordByName = _ledger.getRecordByFileName(fileName);
+        sealedRecordByHash = _ledger.getRecordByHash(sha256Hash);
       } catch (_) {
-        existingRecord = null;
+        sealedRecordByName = null;
+        sealedRecordByHash = null;
       }
-      final isAlreadySealed = existingRecord != null;
+
+      final existingRecord = sealedRecordByHash ?? sealedRecordByName;
+      final isAlreadySealed = sealedRecordByHash != null;
       final manifestUri = existingRecord?.c2paManifestUri ??
           (isAudio ? 'urn:c2pa:obsidian:voice:${sha256Hash.substring(0, 12)}' : '');
+
+      // =================================================================
+      // ZERO-TRUST PRE-TRANSMISSION TAMPER GATE
+      // Automatically verify whether the file is tampered on User 1's side.
+      // If tampered, terminate immediately: User 2 must receive NOTHING.
+      // =================================================================
+      bool isTampered = false;
+      String tamperReason = '';
+
+      // Check A: Ledger Anchor Discrepancy (Cryptographic Shatter)
+      if (sealedRecordByName != null &&
+          sealedRecordByName.originalFileHash.trim().toLowerCase() !=
+              sha256Hash.trim().toLowerCase()) {
+        isTampered = true;
+        tamperReason =
+            'Ledger seal discrepancy: bitstream hash differs from sealed baseline (${sealedRecordByName.originalFileHash.substring(0, 8)}... vs ${sha256Hash.substring(0, 8)}...)';
+      }
+
+      // Check B: Deep Forensic Integrity Inspection
+      if (!isTampered && !isAudio) {
+        try {
+          final forensicReport = DocumentForensicService.analyzeDocument(
+            bytes: fileBytes,
+            fileName: fileName,
+            ledgerHistory: _ledger.getHistory(),
+          );
+          if (forensicReport.isTampered) {
+            isTampered = true;
+            tamperReason = forensicReport.verdict.summary;
+          } else if (forensicReport.isScrambled) {
+            isTampered = true;
+            tamperReason =
+                'Binary bitstream is scrambled, truncated, or structurally corrupted.';
+          }
+        } catch (_) {
+          // Graceful fallback for non-document raw binary streams
+        }
+      }
+
+      if (isTampered) {
+        // TERMINATE IMMEDIATELY:
+        // Do NOT send startPacket to peer.
+        // Do NOT stream any bytes.
+        // Do NOT create a fileAttachment in the chat.
+        _isTransferring = false;
+        _activeTransferringFileName = null;
+        _appendSystemNotice(
+          'ZERO-TRUST ALERT: Transmission of "$fileName" ABORTED. Tampering detected ($tamperReason). Asset quarantined locally.',
+        );
+        notifyListeners();
+        return; // Immediately exit! Remote peer receives NOTHING.
+      }
 
       // Do NOT seal again: skip ledger write and start transferring immediately
       _isSealing = false;

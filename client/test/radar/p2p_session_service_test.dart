@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -83,19 +84,29 @@ class MockSignalingService extends Fake implements SignalingService {
 }
 
 class MockLedgerService extends Fake with ChangeNotifier implements LedgerService {
+  final Map<String, ProvenanceRecord> recordsByHash = {};
+  final Map<String, ProvenanceRecord> recordsByName = {};
+
   @override
   Future<void> addRecord(dynamic record) async {
+    if (record is ProvenanceRecord) {
+      recordsByHash[record.originalFileHash.toLowerCase()] = record;
+      recordsByName[record.filePath.toLowerCase()] = record;
+    }
     notifyListeners();
   }
 
   @override
-  ProvenanceRecord? getRecordByHash(String sha256Hash, {String? filterEmail}) => null;
+  ProvenanceRecord? getRecordByHash(String sha256Hash, {String? filterEmail}) =>
+      recordsByHash[sha256Hash.toLowerCase()];
 
   @override
-  ProvenanceRecord? getRecordByFileName(String fileName, {String? filterEmail}) => null;
+  ProvenanceRecord? getRecordByFileName(String fileName, {String? filterEmail}) =>
+      recordsByName[fileName.toLowerCase()];
 
   @override
-  List<ProvenanceRecord> getHistory({String? filterEmail}) => [];
+  List<ProvenanceRecord> getHistory({String? filterEmail}) =>
+      recordsByHash.values.toList();
 }
 
 void main() {
@@ -679,6 +690,135 @@ void main() {
       expect(identical(session1, session2), isTrue);
       expect(session2.sessionState, P2PSessionState.connected);
       expect(session2.activePeer?.displayName, 'Retained Peer');
+    });
+
+    test('Zero-Trust Guard: User 1 attempts to send ledger-tampered file: transmission aborted and 0 packets sent to User 2', () async {
+      final mockWebRTC = MockWebRTCService();
+      final mockSignaling = MockSignalingService();
+      final mockLedger = MockLedgerService();
+
+      final session = P2PSessionService(
+        webrtc: mockWebRTC,
+        signaling: mockSignaling,
+        ledger: mockLedger,
+      );
+
+      const peer = RadarPeer(
+        uuid: 'peer-user-2',
+        displayName: 'User 2',
+        email: 'user2@enclave.local',
+        platform: 'Windows Node',
+        isSimulated: false,
+      );
+      session.handleIncomingSessionAccepted(peer);
+      expect(session.sessionState, P2PSessionState.connected);
+
+      // 1. Seed ledger with an immutable sealed record for "financial_audit.pdf"
+      const authenticHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      final sealedRecord = ProvenanceRecord(
+        id: 'rec-financial-01',
+        originalFileHash: authenticHash,
+        c2paManifestUri: 'urn:c2pa:obsidian:test:financial',
+        timestamp: DateTime.now(),
+        signature: 'ED25519-SIG-1234',
+        filePath: 'financial_audit.pdf',
+        ownerEmail: 'user1@enclave.local',
+      );
+      await mockLedger.addRecord(sealedRecord);
+
+      // 2. User 1 now attempts to send a TAMPERED version of "financial_audit.pdf"
+      // (different bytes, meaning different hash)
+      final tamperedBytes = Uint8List.fromList(utf8.encode('MODIFIED TAMPERED CONTENT'));
+      final tamperedFile = XFile.fromData(
+        tamperedBytes,
+        name: 'financial_audit.pdf',
+        path: 'financial_audit.pdf',
+      );
+
+      await session.enqueueFiles([tamperedFile]);
+
+      // 3. VERIFY ZERO-TRUST ENFORCEMENT:
+      // A) No file_start packet was dispatched across WebRTC or Signaling
+      final fileStartWebRTC = mockWebRTC.sentTextMessages.where((m) => m.contains('"file_start"')).toList();
+      final fileStartSignaling = mockSignaling.sentSignals.where((s) => s['type'] == 'p2p_file_start').toList();
+      expect(fileStartWebRTC, isEmpty);
+      expect(fileStartSignaling, isEmpty);
+
+      // B) No file message was added to chat (User 2 gets nothing)
+      final fileMessages = session.messages.where((m) => m.fileAttachment != null).toList();
+      expect(fileMessages, isEmpty);
+
+      // C) User 1 sees an immediate local security alert
+      final systemAlerts = session.messages.where((m) => m.isSystemNotice && m.text.contains('ZERO-TRUST ALERT')).toList();
+      expect(systemAlerts, isNotEmpty);
+      expect(systemAlerts.first.text, contains('ABORTED'));
+      expect(systemAlerts.first.text, contains('Tampering detected'));
+      expect(systemAlerts.first.text, contains('financial_audit.pdf'));
+
+      session.dispose();
+    });
+
+    test('Zero-Trust Guard: User 1 attempts to send forensically tampered PDF: transmission aborted and quarantined', () async {
+      final mockWebRTC = MockWebRTCService();
+      final mockSignaling = MockSignalingService();
+      final mockLedger = MockLedgerService();
+
+      final session = P2PSessionService(
+        webrtc: mockWebRTC,
+        signaling: mockSignaling,
+        ledger: mockLedger,
+      );
+
+      const peer = RadarPeer(
+        uuid: 'peer-user-2-forensic',
+        displayName: 'User 2',
+        email: 'user2@enclave.local',
+        platform: 'Android Node',
+        isSimulated: false,
+      );
+      session.handleIncomingSessionAccepted(peer);
+
+      // Construct a mock PDF with an appended incremental revision post %%EOF
+      const tamperedPdfContent = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+xref
+0 2
+0000000000 65535 f 
+0000000009 00000 n 
+trailer
+<< /Size 2 /Root 1 0 R >>
+startxref
+74
+%%EOF
+% Appended malicious incremental revision
+2 0 obj
+<< /ModDate (D:20260908120000) >>
+endobj
+trailer
+<< /Prev 74 >>
+%%EOF
+''';
+
+      final tamperedPdf = XFile.fromData(
+        Uint8List.fromList(utf8.encode(tamperedPdfContent)),
+        name: 'invoice_tampered.pdf',
+        path: 'invoice_tampered.pdf',
+      );
+
+      await session.enqueueFiles([tamperedPdf]);
+
+      // Transfer must be aborted
+      final fileStartWebRTC = mockWebRTC.sentTextMessages.where((m) => m.contains('"file_start"')).toList();
+      expect(fileStartWebRTC, isEmpty);
+
+      final systemAlerts = session.messages.where((m) => m.isSystemNotice && m.text.contains('ZERO-TRUST ALERT')).toList();
+      expect(systemAlerts, isNotEmpty);
+      expect(systemAlerts.first.text, contains('invoice_tampered.pdf'));
+
+      session.dispose();
     });
   });
 }

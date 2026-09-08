@@ -1037,23 +1037,54 @@ class _P2PChatScreenState extends State<P2PChatScreen> with WidgetsBindingObserv
   // 7. SYSTEM NOTICE
   // ==========================================
   Widget _buildSystemNotice(P2PChatMessage message) {
+    final isAlert = message.text.contains('ZERO-TRUST') ||
+        message.text.contains('ABORTED') ||
+        message.text.contains('Tampering detected');
+
     return Center(
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
-        decoration: BoxDecoration(
-          color: const Color(0x1AFFFFFF),
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(color: const Color(0x20FFFFFF)),
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        padding: EdgeInsets.symmetric(
+          horizontal: isAlert ? 14 : 10,
+          vertical: isAlert ? 6 : 3.5,
         ),
-        child: Text(
-          message.text,
-          style: GoogleFonts.jetBrainsMono(
-            fontSize: 9.5,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF94A3B8),
+        decoration: BoxDecoration(
+          color: isAlert ? const Color(0x33F43F5E) : const Color(0x1AFFFFFF),
+          borderRadius: BorderRadius.circular(isAlert ? 12 : 100),
+          border: Border.all(
+            color: isAlert ? const Color(0xFFF43F5E) : const Color(0x20FFFFFF),
+            width: isAlert ? 1.2 : 1.0,
           ),
-          textAlign: TextAlign.center,
+          boxShadow: isAlert
+              ? const [
+                  BoxShadow(
+                    color: Color(0x30F43F5E),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isAlert) ...[
+              const Icon(Icons.shield_outlined,
+                  color: Color(0xFFF43F5E), size: 15),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                message.text,
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: isAlert ? 10.5 : 9.5,
+                  fontWeight: isAlert ? FontWeight.w800 : FontWeight.w600,
+                  color: isAlert ? const Color(0xFFFF88A5) : const Color(0xFF94A3B8),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ),
       ),
     );

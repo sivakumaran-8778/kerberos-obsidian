@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -139,11 +140,12 @@ void main() {
     test('sealAndSendFile preserves existing sealed ledger manifest if file was previously sealed', () async {
       final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46, 0x2D]); // %PDF-
       final xFile = XFile.fromData(pdfBytes, name: 'document.pdf', path: 'document.pdf');
+      final pdfHash = sha256.convert(pdfBytes).toString();
       
-      // Pre-seed mock ledger with existing sealed record
+      // Pre-seed mock ledger with existing sealed record matching authentic hash
       mockLedger.savedRecords.add(ProvenanceRecord(
         id: 'orig-doc-id',
-        originalFileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        originalFileHash: pdfHash,
         c2paManifestUri: 'urn:c2pa:obsidian:presealed123',
         timestamp: DateTime.now(),
         signature: 'sig',
