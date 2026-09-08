@@ -25,6 +25,8 @@ import '../../radar/presentation/radar_page.dart';
 import '../../radar/providers/radar_providers.dart';
 import '../../radar/services/p2p_session_service.dart';
 import '../../radar/models/radar_models.dart';
+import 'widgets/download_center_dialog.dart';
+import '../services/platform_launcher_helper.dart';
 
 enum ActiveDeckModal {
   none,
@@ -1954,6 +1956,23 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                 ),
               ),
             ),
+            CyberButton(
+              variant: CyberButtonVariant.glassPill,
+              height: isMobile ? 46 : 52,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
+              icon: Icons.download_for_offline_rounded,
+              enableHoverPop: true,
+              onTap: () => DownloadCenterDialog.show(context),
+              child: Text(
+                'Download App',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: isMobile ? 13.5 : 15,
+                  letterSpacing: 0.2,
+                  color: const Color(0xFF38BDF8),
+                ),
+              ),
+            ),
           ],
         ),
       ],
@@ -1979,12 +1998,295 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildHeroSection(isMobile: isMobile),
+              SizedBox(height: isMobile ? 40 : 72),
+              _buildCrossPlatformDownloadCenter(isMobile: isMobile),
               SizedBox(height: isMobile ? 48 : 96),
               _buildApplicationExplainerSection(),
               SizedBox(height: isMobile ? 32 : 56),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // CROSS-PLATFORM DOWNLOAD CENTER (WINDOWS & MOBILE)
+  // ==========================================
+  Widget _buildCrossPlatformDownloadCenter({bool isMobile = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0x2238BDF8),
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: const Color(0x6038BDF8)),
+                ),
+                child: Text(
+                  'DIRECT CROSS-PLATFORM RELEASES // WINDOWS & ANDROID',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFBAE6FD),
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Install Obsidian Client On Your Devices',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: isMobile ? 24 : 32,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: -0.8,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Text(
+                  'Deploy Project Kerberos natively across workstations and mobile forensic field units. Binaries are signed with hardware Ed25519 keys, operate completely air-gapped, and sync seamlessly over direct WebRTC P2P.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: isMobile ? 12.5 : 14,
+                    color: CyberTheme.textSecondary,
+                    height: 1.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
+
+        // Platform Cards Row / Column
+        if (isMobile)
+          Column(
+            children: [
+              _buildDownloadOptionCard(
+                icon: Icons.desktop_windows_rounded,
+                iconColor: const Color(0xFF38BDF8),
+                platformName: 'Windows Desktop Client',
+                badgeText: 'RECOMMENDED DESKTOP',
+                badgeColor: const Color(0xFF0284C7),
+                versionInfo: 'v2.4.0 • 64-bit Installer (.zip / .exe) • ~58 MB',
+                description: 'Full hardware-accelerated desktop workstation with Ed25519 keystore, offline ELA forensics, and local AES-256 encrypted Hive ledger.',
+                onDownload: () => PlatformLauncherHelper.launchUrl(
+                  context,
+                  PlatformLauncherHelper.windowsDownloadUrl,
+                  platformName: 'Windows Desktop',
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildDownloadOptionCard(
+                icon: Icons.phone_android_rounded,
+                iconColor: const Color(0xFF34D399),
+                platformName: 'Android Mobile App',
+                badgeText: 'MOBILE FIELD SCANNER',
+                badgeColor: const Color(0xFF059669),
+                versionInfo: 'v2.4.0 • Direct APK (.apk) • ~29 MB',
+                description: 'Field inspection suite for investigators. Ingest camera photos with tamper-evident metadata, scan UIDAI QR codes, and mesh via P2P Radar.',
+                onDownload: () => PlatformLauncherHelper.launchUrl(
+                  context,
+                  PlatformLauncherHelper.androidDownloadUrl,
+                  platformName: 'Android APK',
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildDownloadOptionCard(
+                icon: Icons.language_rounded,
+                iconColor: const Color(0xFFC084FC),
+                platformName: 'Web Browser Enclave',
+                badgeText: 'ZERO INSTALL SANDBOX',
+                badgeColor: const Color(0xFF9333EA),
+                versionInfo: 'Instant • Chrome / Edge / Safari • WebAssembly',
+                description: 'Run the complete zk-SNARK prover and blind provenance verification suite in any modern browser without installing software.',
+                buttonText: 'Launch Web App',
+                onDownload: () => PlatformLauncherHelper.launchUrl(
+                  context,
+                  PlatformLauncherHelper.webAppUrl,
+                  platformName: 'Web Enclave',
+                ),
+              ),
+            ],
+          )
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildDownloadOptionCard(
+                  icon: Icons.desktop_windows_rounded,
+                  iconColor: const Color(0xFF38BDF8),
+                  platformName: 'Windows Desktop',
+                  badgeText: 'RECOMMENDED DESKTOP',
+                  badgeColor: const Color(0xFF0284C7),
+                  versionInfo: 'v2.4.0 • 64-bit (.zip / .exe) • ~58 MB',
+                  description: 'Native desktop workstation with GPU acceleration, offline ELA forensics, and AES-256 encrypted local ledger.',
+                  onDownload: () => PlatformLauncherHelper.launchUrl(
+                    context,
+                    PlatformLauncherHelper.windowsDownloadUrl,
+                    platformName: 'Windows Desktop',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildDownloadOptionCard(
+                  icon: Icons.phone_android_rounded,
+                  iconColor: const Color(0xFF34D399),
+                  platformName: 'Android Mobile App',
+                  badgeText: 'MOBILE FIELD SCANNER',
+                  badgeColor: const Color(0xFF059669),
+                  versionInfo: 'v2.4.0 • Direct APK (.apk) • ~29 MB',
+                  description: 'Mobile field suite. Ingest photos with tamper-evident C2PA tags, scan UIDAI QR codes, and sync via P2P Radar.',
+                  onDownload: () => PlatformLauncherHelper.launchUrl(
+                    context,
+                    PlatformLauncherHelper.androidDownloadUrl,
+                    platformName: 'Android APK',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildDownloadOptionCard(
+                  icon: Icons.language_rounded,
+                  iconColor: const Color(0xFFC084FC),
+                  platformName: 'Web Browser Enclave',
+                  badgeText: 'ZERO INSTALL SANDBOX',
+                  badgeColor: const Color(0xFF9333EA),
+                  versionInfo: 'Instant • Chrome / Edge / Safari',
+                  description: 'Run zk-SNARK proofs and provenance verification in-browser with native WebAssembly and WebGPU acceleration.',
+                  buttonText: 'Launch Web App',
+                  onDownload: () => PlatformLauncherHelper.launchUrl(
+                    context,
+                    PlatformLauncherHelper.webAppUrl,
+                    platformName: 'Web Enclave',
+                  ),
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDownloadOptionCard({
+    required IconData icon,
+    required Color iconColor,
+    required String platformName,
+    required String badgeText,
+    required Color badgeColor,
+    required String versionInfo,
+    required String description,
+    String? buttonText,
+    required VoidCallback onDownload,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF130E20),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x35A855F7)),
+        boxShadow: [
+          BoxShadow(
+            color: iconColor.withValues(alpha: 0.08),
+            blurRadius: 20,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: iconColor.withValues(alpha: 0.4)),
+                ),
+                child: Icon(icon, color: iconColor, size: 24),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: badgeColor.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.5)),
+                ),
+                child: Text(
+                  badgeText,
+                  style: GoogleFonts.jetBrainsMono(
+                    color: badgeColor,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            platformName,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            versionInfo,
+            style: GoogleFonts.jetBrainsMono(
+              color: const Color(0xFF94A3B8),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            description,
+            style: GoogleFonts.plusJakartaSans(
+              color: const Color(0xFFCBD5E1),
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: iconColor,
+                foregroundColor: const Color(0xFF0A0712),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              icon: Icon(buttonText != null ? Icons.open_in_new_rounded : Icons.download_rounded, size: 16),
+              label: Text(
+                buttonText ?? 'Download Now',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              onPressed: onDownload,
+            ),
+          ),
+        ],
       ),
     );
   }
