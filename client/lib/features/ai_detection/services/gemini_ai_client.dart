@@ -72,16 +72,60 @@ class GeminiAiClient {
     return null;
   }
 
+  static const String vercelEndpoint =
+      'https://kerberos-obsidian.vercel.app/api/gemini-key';
+  static bool _isFetchingFromVercel = false;
+
+  /// Dynamically fetches the GEMINI_API_KEY from Vercel environment variables.
+  /// Eliminates the need to ever store the API key in local .env files.
+  static Future<String?> fetchKeyFromVercel() async {
+    if (_inMemoryApiKey != null && _inMemoryApiKey!.isNotEmpty) {
+      return _inMemoryApiKey;
+    }
+    if (_isFetchingFromVercel) return null;
+    _isFetchingFromVercel = true;
+
+    try {
+      final uri = Uri.parse(vercelEndpoint);
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      final contentType = response.headers['content-type'] ?? '';
+      if (response.statusCode == 200 && contentType.contains('json')) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final key = data['apiKey'] as String?;
+        if (key != null && key.trim().isNotEmpty) {
+          _inMemoryApiKey = key.trim();
+          debugPrint(
+              '[GeminiAiClient] Successfully dynamically fetched GEMINI_API_KEY from Vercel!');
+          return _inMemoryApiKey;
+        }
+      }
+    } catch (e) {
+      debugPrint('[GeminiAiClient] Dynamic Vercel key fetch notice: $e');
+    } finally {
+      _isFetchingFromVercel = false;
+    }
+    return null;
+  }
+
+  /// Ensures an API key is available, attempting dynamic Vercel fetch if not present locally.
+  static Future<String?> ensureApiKey({String? overrideKey}) async {
+    final existing = getApiKey(overrideKey: overrideKey);
+    if (existing != null && existing.isNotEmpty) {
+      return existing;
+    }
+    return await fetchKeyFromVercel();
+  }
+
   /// Evaluates document text or raw text extracts with Gemini 2.5 Flash.
   static Future<GeminiForensicResult> evaluateText({
     required String text,
     String? overrideApiKey,
     String model = defaultModel,
   }) async {
-    final apiKey = getApiKey(overrideKey: overrideApiKey);
+    final apiKey = await ensureApiKey(overrideKey: overrideApiKey);
     if (apiKey == null) {
       return GeminiForensicResult.error(
-          'GEMINI_API_KEY is not configured in .env or settings');
+          'GEMINI_API_KEY is not configured in Vercel or settings');
     }
 
     final prompt = '''
@@ -144,10 +188,10 @@ Output strictly valid JSON with no enclosing markdown fences and no extra text m
     String model = defaultModel,
     String? contextMetadata,
   }) async {
-    final apiKey = getApiKey(overrideKey: overrideApiKey);
+    final apiKey = await ensureApiKey(overrideKey: overrideApiKey);
     if (apiKey == null) {
       return GeminiForensicResult.error(
-          'GEMINI_API_KEY is not configured in .env or settings');
+          'GEMINI_API_KEY is not configured in Vercel or settings');
     }
 
     final base64Image = base64Encode(imageBytes);

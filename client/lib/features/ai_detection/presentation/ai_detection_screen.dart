@@ -50,6 +50,15 @@ class _AiDetectionScreenState extends ConsumerState<AiDetectionScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
+
+    // Dynamically fetch Gemini API key from Vercel (no local storage needed)
+    GeminiAiClient.ensureApiKey().then((key) {
+      if (mounted && key != null && key.isNotEmpty) {
+        setState(() {
+          _customApiKey = key;
+        });
+      }
+    });
   }
 
   @override
