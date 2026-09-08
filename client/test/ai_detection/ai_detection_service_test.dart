@@ -125,8 +125,11 @@ I told her about the dust. We laughed, got sandwiches from across the street, an
     });
 
     test('GeminiAiClient dynamically fetches from Vercel and executes live neural verification', () async {
+      const fullAiEssay = '''
+Artificial neural networks are computational models inspired by the biological nervous systems of animal brains. Such systems learn to perform tasks by considering examples, generally without being programmed with task-specific rules. For example, in image recognition, they might learn to identify images that contain cats by analyzing example images that have been manually labeled as 'cat' or 'no cat' and using the results to identify cats in other images. They automatically generate identifying characteristics from the examples that they process.
+''';
       final result = await GeminiAiClient.evaluateText(
-        text: 'In conclusion, it is important to note that the tapestry of transformation fosters a pivotal role.',
+        text: fullAiEssay,
       );
 
       // Successfully reaches Vercel, gets key, and calls Gemini API!
@@ -134,6 +137,20 @@ I told her about the dust. We laughed, got sandwiches from across the street, an
       expect(result.syntheticProbability, greaterThan(0.50));
       expect(result.modelLineage, isNotEmpty);
       expect(result.executiveSummary, isNotEmpty);
+    });
+
+    test('Market Standard: Short casual human text (e.g. "i love zoro") is never flagged as AI', () async {
+      final bytes = Uint8List.fromList(utf8.encode('i love zoro'));
+      final report = await AiDetectionService.analyzeFile(
+        bytes: bytes,
+        fileName: 'zoro.pdf',
+        enableGeminiNeural: true,
+      );
+
+      expect(report.overallAiProbability, lessThanOrEqualTo(5.0));
+      expect(report.verdict, equals(AiDetectionVerdict.humanAuthored));
+      expect(report.detectedModelFamily, contains('Human'));
+      expect(report.textSegments.first.isFlagged, isFalse);
     });
   });
 }

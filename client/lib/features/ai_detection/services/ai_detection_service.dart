@@ -275,7 +275,9 @@ class AiDetectionService {
       );
     }
 
-    // 9. Bayesian Ensemble Fusion (Gemini 2.5 Flash as Primary)
+    // 9. Bayesian Ensemble Fusion (Market-Standard Calibrated Model)
+    final totalWords = allTokens.length;
+    final isShortSample = totalWords < 35;
     double finalAiProbability = edgeProb;
     bool isNeuralVerified = false;
     String detectedModelFamily = 'Natural Human Stylometry';
@@ -283,14 +285,30 @@ class AiDetectionService {
 
     if (geminiResult != null && geminiResult.isSuccess) {
       isNeuralVerified = true;
-      // PRIMARY ENGINE: Gemini 2.5 Flash holds 85% primary decision authority + 15% edge corroboration
-      final fused = (geminiResult.syntheticProbability * 0.85) + (edgeProb * 0.15);
-      finalAiProbability = fused.clamp(0.01, 0.99);
       detectedModelFamily = geminiResult.modelLineage;
       summary = geminiResult.executiveSummary;
 
+      if (isShortSample && detectedPhrases.isEmpty && !hasAiMetadata) {
+        // Market Standard (Turnitin/GPTZero): Short conversational texts cannot be identified as generative AI
+        finalAiProbability = math.min(geminiResult.syntheticProbability, 0.04);
+        detectedModelFamily = 'Authentic Human Expression';
+        summary =
+            'Short conversational expression ($totalWords words). Below the 35-word statistical benchmark required for generative model attribution.';
+      } else if (geminiResult.syntheticProbability >= 0.70) {
+        // Pure AI generation (e.g. GPT-4o, Claude) detected by neural engine
+        finalAiProbability = geminiResult.syntheticProbability;
+      } else if (geminiResult.syntheticProbability <= 0.25) {
+        // Authentic human authorship confirmed by neural engine
+        finalAiProbability = geminiResult.syntheticProbability;
+      } else {
+        // Hybrid / borderline: fuse neural with edge heuristics
+        final fused =
+            (geminiResult.syntheticProbability * 0.85) + (edgeProb * 0.15);
+        finalAiProbability = fused.clamp(0.01, 0.99);
+      }
+
       // Enrich sentence heatmap with Gemini's primary neural attributions
-      if (geminiResult.sentenceEvaluations.isNotEmpty) {
+      if (geminiResult.sentenceEvaluations.isNotEmpty && !isShortSample) {
         for (final geminiSent in geminiResult.sentenceEvaluations) {
           final idx = geminiSent['sentence_index'];
           final prob = (geminiSent['ai_probability'] as num?)?.toDouble();
@@ -309,10 +327,27 @@ class AiDetectionService {
             );
           }
         }
+      } else if (isShortSample && detectedPhrases.isEmpty && !hasAiMetadata) {
+        for (int i = 0; i < sentenceSegments.length; i++) {
+          final existing = sentenceSegments[i];
+          sentenceSegments[i] = AiTextSpanSegment(
+            sentenceIndex: existing.sentenceIndex,
+            text: existing.text,
+            aiProbability: 0.02,
+            reason: 'Authentic conversational brevity',
+            isFlagged: false,
+          );
+        }
       }
     } else {
-      if (hasAiMetadata) {
-        detectedModelFamily = 'AI Document Engine (${metadataInfo['Producer'] ?? metadataInfo['Creator']})';
+      if (isShortSample && detectedPhrases.isEmpty && !hasAiMetadata) {
+        finalAiProbability = 0.03;
+        detectedModelFamily = 'Authentic Human Expression (Short Text)';
+        summary =
+            'Brief conversational text ($totalWords words). Below minimum generative analysis threshold.';
+      } else if (hasAiMetadata) {
+        detectedModelFamily =
+            'AI Document Engine (${metadataInfo['Producer'] ?? metadataInfo['Creator']})';
       } else if (edgeProb > 0.65) {
         detectedModelFamily = 'OpenAI GPT-4 / Anthropic Claude Syntactic Class';
       } else if (edgeProb > 0.35) {
@@ -321,9 +356,11 @@ class AiDetectionService {
         detectedModelFamily = 'Human Authored (Authentic Human Stylometry)';
       }
 
-      summary = edgeProb > 0.60
-          ? 'Dense frequency of structural LLM transitional phrases and low sentence burstiness variance (${burstinessSigma.toStringAsFixed(1)}).'
-          : 'Natural sentence length diversity (${burstinessSigma.toStringAsFixed(1)}) and organic lexical variation typical of authentic human authors.';
+      if (!isShortSample) {
+        summary = edgeProb > 0.60
+            ? 'Dense frequency of structural LLM transitional phrases and low sentence burstiness variance (${burstinessSigma.toStringAsFixed(1)}).'
+            : 'Natural sentence length diversity (${burstinessSigma.toStringAsFixed(1)}) and organic lexical variation typical of authentic human authors.';
+      }
     }
 
     final overallPercentage = (finalAiProbability * 100.0).clamp(0.0, 100.0);
@@ -352,14 +389,17 @@ class AiDetectionService {
         id: 'doc_burstiness',
         title: 'Syntactic Burstiness Variance',
         subtitle: 'Sentence Length Standard Deviation (σ)',
-        status: burstinessSigma < 4.5 && totalSentences >= 4
-            ? AiCheckpointStatus.flagged
-            : burstinessSigma < 7.0 && totalSentences >= 4
-                ? AiCheckpointStatus.warning
-                : AiCheckpointStatus.passed,
-        details:
-            'Sentence word count standard deviation is σ = ${burstinessSigma.toStringAsFixed(2)}. Monotone clustering is characteristic of generative LLMs.',
-        confidence: 0.92,
+        status: isShortSample
+            ? AiCheckpointStatus.passed
+            : burstinessSigma < 4.5 && totalSentences >= 4
+                ? AiCheckpointStatus.flagged
+                : burstinessSigma < 7.0 && totalSentences >= 4
+                    ? AiCheckpointStatus.warning
+                    : AiCheckpointStatus.passed,
+        details: isShortSample
+            ? 'Sample length ($totalWords words) is below statistical threshold. Normal for short human notes.'
+            : 'Sentence word count standard deviation is σ = ${burstinessSigma.toStringAsFixed(2)}. Monotone clustering is characteristic of generative LLMs.',
+        confidence: isShortSample ? 0.98 : 0.92,
       ),
       AiCheckPoint(
         id: 'doc_stylometrics',
