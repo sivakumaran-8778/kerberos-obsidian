@@ -1764,9 +1764,24 @@ class DocumentForensicService {
   }) {
     final rawAscii = _bytesToAsciiString(bytes);
 
-    // 1. Page Dimensions
+    // 1. Page Dimensions & Text Extraction via Syncfusion
     double pageWidth = 612.0;
     double pageHeight = 792.0;
+    final List<TextLine> extractedTextLines = [];
+    try {
+      final pdfDoc = PdfDocument(inputBytes: bytes);
+      if (pdfDoc.pages.count > 0) {
+        final page0 = pdfDoc.pages[0];
+        if (page0.size.width > 0 && page0.size.height > 0) {
+          pageWidth = page0.size.width;
+          pageHeight = page0.size.height;
+        }
+        final extractor = PdfTextExtractor(pdfDoc);
+        extractedTextLines.addAll(extractor.extractTextLines(startPageIndex: 0, endPageIndex: 0));
+      }
+      pdfDoc.dispose();
+    } catch (_) {}
+
     final mediaBoxRegex = RegExp(r'/(?:MediaBox|CropBox)\s*\[\s*([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\]');
     final mbMatch = mediaBoxRegex.firstMatch(rawAscii);
     if (mbMatch != null) {
@@ -1774,8 +1789,12 @@ class DocumentForensicService {
       final y1 = double.tryParse(mbMatch.group(2)!) ?? 0.0;
       final x2 = double.tryParse(mbMatch.group(3)!) ?? 612.0;
       final y2 = double.tryParse(mbMatch.group(4)!) ?? 792.0;
-      pageWidth = (x2 - x1).abs().clamp(200.0, 3000.0);
-      pageHeight = (y2 - y1).abs().clamp(200.0, 3000.0);
+      final mw = (x2 - x1).abs();
+      final mh = (y2 - y1).abs();
+      if (mw > 100 && mh > 100) {
+        pageWidth = mw;
+        pageHeight = mh;
+      }
     }
 
     final cellHits = <int, int>{};
@@ -1801,6 +1820,13 @@ class DocumentForensicService {
 
     // 2. Detect Places Where Changes Are Made (Altered text, modified numerical tokens, appended revision streams)
     if (revisionDiff != null && revisionDiff.hasChanges) {
+      for (final line in extractedTextLines) {
+        for (final token in revisionDiff.addedTokens) {
+          if (line.text.contains(token)) {
+            markArea(line.bounds.left, line.bounds.top, line.bounds.width, line.bounds.height);
+          }
+        }
+      }
       for (final token in revisionDiff.addedTokens) {
         final tokenIdx = rawAscii.indexOf(token);
         if (tokenIdx != -1) {
@@ -1833,7 +1859,7 @@ class DocumentForensicService {
       }
     }
 
-    // 3. Detect Overlapped Content (Whiteout boxes, form annotations, stacked /Contents streams)
+    // 3. Detect Overlapped Content (Whiteout masks, annotations, layered streams)
     final whiteoutRegex = RegExp(r'(?:([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+re\s+(?:1(?:\.0+)?\s+g|1(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?\s+rg)\s+[fFsS]|(?:1(?:\.0+)?\s+g|1(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?\s+rg)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+re\s+[fFsS])');
     for (final m in whiteoutRegex.allMatches(rawAscii).take(8)) {
       final xStr = m.group(1) ?? m.group(5);
@@ -1959,17 +1985,17 @@ class DocumentForensicService {
         if (changedCells.contains(idx) || overlappedCells.contains(idx) || hiddenCells.contains(idx)) {
           for (final nIdx in [idx - 1, idx + 1, idx - 16, idx + 16]) {
             if (!changedCells.contains(nIdx) && !overlappedCells.contains(nIdx) && !hiddenCells.contains(nIdx)) {
-              diffused[nIdx] = math.max(diffused[nIdx], tensor[idx] * 0.52);
+              diffused[nIdx] = math.max(diffused[nIdx], tensor[idx] * 0.68);
             }
           }
         }
       }
     }
     for (int i = 0; i < 256; i++) {
-      tensor[i] = diffused[i].clamp(0.05, 0.99);
+      tensor[i] = diffused[i];
     }
 
-    // Compute stats
+    // Statistical peak and baseline metrics
     double sum = 0.0;
     double peak = 0.0;
     int peakIdx = 0;
@@ -1996,7 +2022,7 @@ class DocumentForensicService {
         ? (peakCol >= 8 ? 'Quadrant B' : 'Quadrant A')
         : (peakCol >= 8 ? 'Quadrant D' : 'Quadrant C');
 
-    final bool hasSplicing = isTampered || changedCells.isNotEmpty || overlappedCells.isNotEmpty || hiddenCells.isNotEmpty;
+    final bool hasSplicing = isTampered || (peak > 0.55 && (peak - mean > 0.25 || stdDev > 0.10)) || changedCells.isNotEmpty;
 
     final String coords;
     if (hasSplicing) {
@@ -2013,6 +2039,8 @@ class DocumentForensicService {
     Uint8List? previewBytes;
     Uint8List? thermalBytes;
     Uint8List? elaBytes;
+    final canvasW = 600;
+    final canvasH = (canvasW * (pageHeight / pageWidth)).round().clamp(500, 1100);
     try {
       final embedded = _extractEmbeddedJpeg(bytes);
       img.Image? baseImg;
@@ -2020,31 +2048,51 @@ class DocumentForensicService {
         baseImg = img.decodeImage(embedded);
       }
 
-      final canvasW = 600;
-      final canvasH = 800;
       final docCanvas = img.Image(width: canvasW, height: canvasH);
       final thermalCanvas = img.Image(width: canvasW, height: canvasH, numChannels: 4);
       final elaCanvas = img.Image(width: canvasW, height: canvasH);
 
-      img.fill(docCanvas, color: img.ColorRgb8(248, 250, 252));
-      for (int x = 40; x < canvasW - 40; x++) {
-        for (int y = 50; y < 75; y++) {
-          docCanvas.setPixelRgb(x, y, 226, 232, 240);
-        }
-      }
-      for (int line = 0; line < 26; line++) {
-        final lineY = 110 + line * 24;
-        final lineW = ((line % 3 == 0) ? 380 : (line % 2 == 0 ? 480 : 440));
-        for (int x = 50; x < 50 + lineW; x++) {
-          for (int y = lineY; y < lineY + 6; y++) {
-            docCanvas.setPixelRgb(x, y, 203, 213, 225);
+      if (baseImg != null) {
+        final resized = img.copyResize(baseImg, width: canvasW, height: canvasH, interpolation: img.Interpolation.linear);
+        img.compositeImage(docCanvas, resized);
+      } else {
+        img.fill(docCanvas, color: img.ColorRgb8(248, 250, 252));
+        // Header bar
+        for (int x = 30; x < canvasW - 30; x++) {
+          for (int y = 25; y < 45; y++) {
+            docCanvas.setPixelRgb(x, y, 226, 232, 240);
           }
         }
-      }
+        if (extractedTextLines.isNotEmpty) {
+          for (final line in extractedTextLines.take(45)) {
+            final lx = ((line.bounds.left / pageWidth) * canvasW).round().clamp(15, canvasW - 35);
+            final ly = ((line.bounds.top / pageHeight) * canvasH).round().clamp(20, canvasH - 25);
+            final lw = ((line.bounds.width / pageWidth) * canvasW).round().clamp(10, canvasW - lx - 10);
+            final lh = math.max(4, ((line.bounds.height / pageHeight) * canvasH).round().clamp(3, 14));
 
-      if (baseImg != null) {
-        final resized = img.copyResize(baseImg, width: 480, height: 320);
-        img.compositeImage(docCanvas, resized, dstX: 60, dstY: 240);
+            final bool isAltered = revisionDiff != null && revisionDiff.addedTokens.any((t) => line.text.contains(t));
+            final rColor = isAltered ? 244 : 180;
+            final gColor = isAltered ? 63 : 190;
+            final bColor = isAltered ? 94 : 205;
+
+            for (int px = lx; px < lx + lw; px++) {
+              for (int py = ly; py < ly + lh; py++) {
+                docCanvas.setPixelRgb(px, py, rColor, gColor, bColor);
+              }
+            }
+          }
+        } else {
+          for (int line = 0; line < 26; line++) {
+            final lineY = 70 + line * 24;
+            if (lineY >= canvasH - 30) break;
+            final lineW = ((line % 3 == 0) ? 380 : (line % 2 == 0 ? 480 : 440));
+            for (int x = 45; x < math.min(canvasW - 40, 45 + lineW); x++) {
+              for (int y = lineY; y < lineY + 6; y++) {
+                docCanvas.setPixelRgb(x, y, 203, 213, 225);
+              }
+            }
+          }
+        }
       }
 
       for (int py = 0; py < canvasH; py++) {
@@ -2053,7 +2101,7 @@ class DocumentForensicService {
           final bX = (px * 16 ~/ canvasW).clamp(0, 15);
           final val = tensor[bY * 16 + bX];
           final (tr, tg, tb) = _getThermalRgb(val);
-          final alpha = (val > 0.40 ? (val * 220).toInt().clamp(60, 230) : 0);
+          final alpha = (val > 0.45 ? (val * 220).toInt().clamp(60, 230) : 0);
           thermalCanvas.setPixelRgba(px, py, tr, tg, tb, alpha);
 
           final amp = (val * 255).toInt().clamp(0, 255);
@@ -2075,8 +2123,8 @@ class DocumentForensicService {
       elaImageBytes: elaBytes,
       thermalImageBytes: thermalBytes,
       previewImageBytes: previewBytes,
-      imageWidth: 600,
-      imageHeight: 800,
+      imageWidth: canvasW,
+      imageHeight: canvasH,
       changedContentCount: changedCells.length,
       overlappedContentCount: overlappedCells.length,
       hiddenContentCount: hiddenCells.length,
@@ -2117,11 +2165,11 @@ class DocumentForensicService {
     int trailingPayloadBytes = 0,
   }) {
     img.Image procImage = image;
-    if (procImage.width > 800 || procImage.height > 800) {
-      final double ratio = math.min(800.0 / procImage.width, 800.0 / procImage.height);
-      final newW = (procImage.width * ratio).round().clamp(64, 800);
-      final newH = (procImage.height * ratio).round().clamp(64, 800);
-      procImage = img.copyResize(procImage, width: newW, height: newH, interpolation: img.Interpolation.linear);
+    if (procImage.width > 1200 || procImage.height > 1200) {
+      final double ratio = math.min(1200.0 / procImage.width, 1200.0 / procImage.height);
+      final newW = (procImage.width * ratio).round().clamp(64, 1200);
+      final newH = (procImage.height * ratio).round().clamp(64, 1200);
+      procImage = img.copyResize(procImage, width: newW, height: newH, interpolation: img.Interpolation.nearest);
     }
 
     // Forensic standard: Re-compress image at quality 90
@@ -2152,9 +2200,14 @@ class DocumentForensicService {
     final hiddenCells = <int>{};
     final descriptions = <String>[];
 
+    final pixelDeltas = Float32List(width * height);
+    double totalError = 0.0;
+    double maxError = 0.0;
+
     // Compute pixel delta across full image and accumulate 16x16 grid
     for (int y = 0; y < height; y++) {
       final blockY = (y * 16 ~/ height).clamp(0, 15);
+      final rowOffset = y * width;
       for (int x = 0; x < width; x++) {
         final p1 = procImage.getPixel(x, y);
         final p2 = recompressed.getPixel(x, y);
@@ -2175,27 +2228,56 @@ class DocumentForensicService {
         final ampB = (db * 18).clamp(0, 255).toInt();
         elaDiffImage.setPixelRgba(x, y, ampR, ampG, ampB, 255);
 
-        // 2. Normalized residual error for thermal mapping
-        final pixelError = (dr + dg + db) / (3.0 * 255.0);
-        final normError = (pixelError * 12.0).clamp(0.0, 1.0);
-        final (tr, tg, tb) = _getThermalRgb(normError);
-        final alpha = (normError * 200 + 40).clamp(0, 235).toInt();
-        thermalImage.setPixelRgba(x, y, tr, tg, tb, alpha);
+        // Accumulate pixel delta
+        final pError = (dr + dg + db) / (3.0 * 255.0);
+        pixelDeltas[rowOffset + x] = pError;
+        totalError += pError;
+        if (pError > maxError) maxError = pError;
 
-        // 3. Accumulate 16x16 block stats
+        // Accumulate 16x16 block stats
         final blockX = (x * 16 ~/ width).clamp(0, 15);
         final blockIdx = blockY * 16 + blockX;
-        blockSums[blockIdx] += pixelError;
+        blockSums[blockIdx] += pError;
         blockCounts[blockIdx]++;
       }
     }
 
+    final globalMean = totalError / (width * height);
+    // Ambient noise cutoff: standard baseline error is transparent (alpha = 0)
+    final ambientCutoff = math.max(0.022, globalMean * 1.35);
+
+    // 2. Generate false-color thermal overlay: pristine baseline is transparent, anomalies glow!
+    for (int y = 0; y < height; y++) {
+      final rowOffset = y * width;
+      for (int x = 0; x < width; x++) {
+        final pError = pixelDeltas[rowOffset + x];
+        if (pError <= ambientCutoff) {
+          // Zero alpha: completely transparent baseline allows the original document to show through cleanly
+          thermalImage.setPixelRgba(x, y, 0, 0, 0, 0);
+        } else {
+          final excess = ((pError - ambientCutoff) / math.max(0.02, maxError - ambientCutoff)).clamp(0.0, 1.0);
+          final (tr, tg, tb) = _getThermalRgb(0.25 + excess * 0.75);
+          final alpha = (excess * 190 + 55).clamp(55, 235).toInt();
+          thermalImage.setPixelRgba(x, y, tr, tg, tb, alpha);
+        }
+      }
+    }
+
+    // 3. Compute 16x16 tensor using absolute quantization error
     for (int i = 0; i < 256; i++) {
       final count = blockCounts[i];
       final avgError = count > 0 ? (blockSums[i] / count) : 0.0;
       tensor[i] = (avgError * 12.0).clamp(0.04, 0.98);
       if (tensor[i] > 0.55) {
         changedCells.add(i);
+      }
+    }
+
+    if (isTampered && changedCells.isEmpty) {
+      final sortedIndices = List.generate(256, (i) => i)..sort((a, b) => tensor[b].compareTo(tensor[a]));
+      for (final idx in sortedIndices.take(4)) {
+        tensor[idx] = math.max(tensor[idx], 0.78);
+        changedCells.add(idx);
       }
     }
 

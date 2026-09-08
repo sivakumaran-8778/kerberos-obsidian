@@ -34,7 +34,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   DocumentForensicReport? _report;
   late AnimationController _pulseController;
   int? _hoveredElaIndex;
-  int _elaViewMode = 0; // 0: 16x16 Matrix, 1: Document Overlay, 2: Layer & Overlap X-Ray, 3: Raw ELA Residuals, 4: Original Asset
+  int _elaViewMode = 1; // 0: 16x16 Matrix, 1: Document Overlay, 2: Layer & Overlap X-Ray, 3: Raw ELA Residuals, 4: Original Asset
   int _elaLayerFilter = 0; // 0: All, 1: Changes, 2: Overlapped, 3: Hidden
   double _elaOverlayOpacity = 0.65;
   Uint8List? _redactedImageBytes;
@@ -120,6 +120,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           _zkProofData = null;
           _redactionCoords = null;
           _isProvingZk = false;
+          _elaViewMode = (report.elaAnalysis?.previewImageBytes != null) ? 1 : 0;
         });
       }
     } catch (e, stack) {
@@ -141,6 +142,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             _zkProofData = null;
             _redactionCoords = null;
             _isProvingZk = false;
+            _elaViewMode = (report.elaAnalysis?.previewImageBytes != null) ? 1 : 0;
           });
         }
       } catch (fatalError) {
@@ -2292,7 +2294,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     }
 
     final double aspect = (ela.imageWidth > 0 && ela.imageHeight > 0)
-        ? (ela.imageWidth / ela.imageHeight).clamp(0.55, 2.2)
+        ? (ela.imageWidth / ela.imageHeight).clamp(0.4, 3.0)
         : 1.0;
 
     final hoveredIdx = _hoveredElaIndex;
@@ -2309,14 +2311,14 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         children: [
           Image.memory(
             activeImageBytes,
-            fit: BoxFit.contain,
+            fit: BoxFit.fill,
           ),
           if (ela.thermalImageBytes != null)
             Opacity(
               opacity: _elaOverlayOpacity,
               child: Image.memory(
                 ela.thermalImageBytes!,
-                fit: BoxFit.contain,
+                fit: BoxFit.fill,
               ),
             ),
           if (hoveredRow != null && hoveredCol != null)
@@ -2346,7 +2348,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         children: [
           Image.memory(
             activeImageBytes,
-            fit: BoxFit.contain,
+            fit: BoxFit.fill,
           ),
           // Draw bounding overlays for changed cells
           for (final idx in ela.changedCellIndices)
@@ -2402,25 +2404,36 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       // 3. Raw ELA Residual Difference Map
       imageStack = Image.memory(
         _redactedImageBytes != null ? activeImageBytes : (ela.elaImageBytes ?? ela.previewImageBytes!),
-        fit: BoxFit.contain,
+        fit: BoxFit.fill,
       );
     } else {
       // 4. Original Asset
       imageStack = Image.memory(
         activeImageBytes,
-        fit: BoxFit.contain,
+        fit: BoxFit.fill,
       );
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final boxW = constraints.maxWidth;
-        final boxH = (boxW / aspect).clamp(220.0, 380.0);
+        final availW = constraints.maxWidth;
+        final maxH = 460.0;
+        double renderW = availW;
+        double renderH = renderW / aspect;
+
+        if (renderH > maxH) {
+          renderH = maxH;
+          renderW = renderH * aspect;
+        }
+        if (renderW > availW) {
+          renderW = availW;
+          renderH = renderW / aspect;
+        }
 
         return Center(
           child: Container(
-            width: boxW,
-            height: boxH,
+            width: renderW,
+            height: renderH,
             decoration: BoxDecoration(
               color: const Color(0xFF070D18),
               borderRadius: BorderRadius.circular(12),
@@ -2436,8 +2449,8 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             clipBehavior: Clip.antiAlias,
             child: MouseRegion(
               onHover: (event) {
-                final localX = (event.localPosition.dx / boxW).clamp(0.0, 0.999);
-                final localY = (event.localPosition.dy / boxH).clamp(0.0, 0.999);
+                final localX = (event.localPosition.dx / renderW).clamp(0.0, 0.999);
+                final localY = (event.localPosition.dy / renderH).clamp(0.0, 0.999);
                 final cellCol = (localX * 16).toInt().clamp(0, 15);
                 final cellRow = (localY * 16).toInt().clamp(0, 15);
                 final idx = cellRow * 16 + cellCol;
@@ -2448,8 +2461,8 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               onExit: (_) => setState(() => _hoveredElaIndex = null),
               child: GestureDetector(
                 onTapDown: (details) {
-                  final localX = (details.localPosition.dx / boxW).clamp(0.0, 0.999);
-                  final localY = (details.localPosition.dy / boxH).clamp(0.0, 0.999);
+                  final localX = (details.localPosition.dx / renderW).clamp(0.0, 0.999);
+                  final localY = (details.localPosition.dy / renderH).clamp(0.0, 0.999);
                   final cellCol = (localX * 16).toInt().clamp(0, 15);
                   final cellRow = (localY * 16).toInt().clamp(0, 15);
                   setState(() => _hoveredElaIndex = cellRow * 16 + cellCol);
