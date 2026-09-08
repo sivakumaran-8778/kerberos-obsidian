@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image/image.dart' as img;
 import '../../../../shared/theme/cyber_theme.dart';
 import '../../../../shared/widgets/cyber_button.dart';
 
@@ -15,7 +16,8 @@ class ZkRedactSelectionDialog extends StatefulWidget {
 }
 
 class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
-  ui.Image? _decodedImage;
+  img.Image? _decodedImage;
+  String? _error;
   Offset? _startPoint;
   Offset? _currentPoint;
   final GlobalKey _imageKey = GlobalKey();
@@ -27,12 +29,29 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
   }
 
   Future<void> _decodeImage() async {
-    final codec = await ui.instantiateImageCodec(widget.imageBytes);
-    final frameInfo = await codec.getNextFrame();
-    if (mounted) {
-      setState(() {
-        _decodedImage = frameInfo.image;
-      });
+    try {
+      if (widget.imageBytes.isEmpty) {
+        throw Exception("File byte buffer is completely empty.");
+      }
+      
+      // Use pure-Dart image decoder to prevent CanvasKit infinite hangs on unsupported formats (like PDFs)
+      final decoded = img.decodeImage(widget.imageBytes);
+      
+      if (decoded == null) {
+        throw Exception("Unsupported image format. ZK-Redact currently only supports JPG/PNG/WebP bitstreams.");
+      }
+
+      if (mounted) {
+        setState(() {
+          _decodedImage = decoded;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -134,9 +153,17 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
             const SizedBox(height: 20),
             
             Expanded(
-              child: _decodedImage == null
-                  ? const Center(child: CircularProgressIndicator(color: CyberTheme.accentColor))
-                  : GestureDetector(
+              child: _error != null
+                  ? Center(
+                      child: Text(
+                        'IMAGE DECODE ERROR: $_error\n\nEnsure you uploaded a valid Image (JPG/PNG). PDFs cannot be rendered directly to Canvas.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: CyberTheme.coral, fontWeight: FontWeight.bold),
+                      ),
+                    )
+                  : _decodedImage == null
+                      ? const Center(child: CircularProgressIndicator(color: CyberTheme.accentColor))
+                      : GestureDetector(
                       key: _imageKey,
                       onPanDown: _onPanStart,
                       onPanUpdate: _onPanUpdate,
