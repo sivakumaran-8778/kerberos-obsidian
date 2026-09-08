@@ -42,11 +42,17 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   Uint8List? _redactedFileBytes;
   Map<String, dynamic>? _zkProofData;
   Map<String, dynamic>? _redactionCoords;
+  DocumentElaAnalysis? _redactedElaAnalysis;
   bool _isProvingZk = false;
   int _selectedForensicPageIndex = 0;
   List<Uint8List>? _pdfPageRasters;
 
   DocumentElaAnalysis get _activeElaAnalysis {
+    if (_redactionCoords != null &&
+        _redactionCoords!['pageIndex'] == _selectedForensicPageIndex &&
+        _redactedElaAnalysis != null) {
+      return _redactedElaAnalysis!;
+    }
     if (_report == null) {
       return const DocumentElaAnalysis(
         heatmapTensor: [],
@@ -164,6 +170,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           _redactedFileBytes = null;
           _zkProofData = null;
           _redactionCoords = null;
+          _redactedElaAnalysis = null;
           _isProvingZk = false;
           _elaViewMode = (report.elaAnalysis?.previewImageBytes != null) ? 1 : 0;
         });
@@ -203,6 +210,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             _redactedFileBytes = null;
             _zkProofData = null;
             _redactionCoords = null;
+            _redactedElaAnalysis = null;
             _isProvingZk = false;
             _elaViewMode = (report.elaAnalysis?.previewImageBytes != null) ? 1 : 0;
           });
@@ -236,6 +244,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       _redactedFileBytes = null;
       _zkProofData = null;
       _redactionCoords = null;
+      _redactedElaAnalysis = null;
       _isProvingZk = false;
     });
   }
@@ -852,6 +861,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             try {
               Uint8List newRedactedFileBytes;
               Uint8List newRedactedImageBytes;
+              DocumentElaAnalysis? previewEla;
 
               if (isPdf) {
                 // 2. Destructively black out vector/stream region in PDF bitstream
@@ -875,16 +885,30 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                       ? newRasters[targetPageIndex]
                       : newRasters.first;
                 } else {
-                  final previewEla = DocumentForensicService.computeQuickPreview(
+                  final fallbackEla = DocumentForensicService.computeQuickPreview(
                     newRedactedFileBytes,
                     targetPageIndex: targetPageIndex,
                     totalPageCount: report.totalPages,
                   );
-                  newRedactedImageBytes = previewEla.previewImageBytes ?? previewEla.elaImageBytes ?? currentEla.previewImageBytes!;
+                  newRedactedImageBytes = fallbackEla.previewImageBytes ?? fallbackEla.elaImageBytes ?? currentEla.previewImageBytes!;
                 }
+
+                // Compute fresh ELA thermal analysis for redacted PDF with new blacked-out raster
+                previewEla = DocumentForensicService.computeQuickPreview(
+                  newRedactedFileBytes,
+                  targetPageIndex: targetPageIndex,
+                  totalPageCount: report.totalPages,
+                  nativeRasterBytes: newRedactedImageBytes,
+                );
               } else {
                 newRedactedFileBytes = CryptoEngineWeb.applyPixelBlackout(sourceFileBytes, coords);
                 newRedactedImageBytes = newRedactedFileBytes;
+                previewEla = DocumentForensicService.computeQuickPreview(
+                  newRedactedFileBytes,
+                  targetPageIndex: 0,
+                  totalPageCount: 1,
+                  nativeRasterBytes: newRedactedImageBytes,
+                );
               }
 
               // 4. Feed coordinates and bytes to the zero-knowledge edge engine
@@ -898,6 +922,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 setState(() {
                   _redactedFileBytes = newRedactedFileBytes;
                   _redactedImageBytes = newRedactedImageBytes;
+                  _redactedElaAnalysis = previewEla;
                   _zkProofData = result;
                   _redactionCoords = coords;
                   _selectedForensicPageIndex = targetPageIndex;

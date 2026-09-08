@@ -1373,6 +1373,146 @@ TRAILLING_CONCEALED_STEGO_PAYLOAD_EXFILTRATION_DATA_BLOCK
         expect(report.hasTrailingPayload, isTrue);
       });
     });
+
+    group('Accurate Thermal Heatmap & Native Raster Fusion', () {
+      test('Fuses native raster with PDF structural diffs without short-circuiting', () {
+        // Create a fake raster image
+        final testRaster = img.Image(width: 200, height: 260);
+        img.fill(testRaster, color: img.ColorRgb8(255, 255, 255));
+        final rasterBytes = Uint8List.fromList(img.encodePng(testRaster));
+
+        // PDF with whiteout mask
+        final pdfWithWhiteout = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 75 >>
+stream
+100.0 500.0 120.0 30.0 re 1 g f
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000200 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+330
+%%EOF
+''';
+        final pdfBytes = Uint8List.fromList(utf8.encode(pdfWithWhiteout));
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: pdfBytes,
+          fileName: 'whiteout_doc.pdf',
+          rasterPages: [rasterBytes],
+        );
+
+        expect(report.elaAnalysis, isNotNull);
+        final ela = report.elaAnalysis!;
+        // Must have preserved structural analysis and detected whiteout
+        expect(ela.changedContentCount, greaterThan(0));
+        expect(ela.previewImageBytes, isNotNull);
+        expect(ela.thermalImageBytes, isNotNull);
+
+        // Decode thermal canvas and verify alpha is active where whiteout was injected
+        final thermalImg = img.decodeImage(ela.thermalImageBytes!)!;
+        bool hasThermalGlow = false;
+        for (int y = 0; y < thermalImg.height; y++) {
+          for (int x = 0; x < thermalImg.width; x++) {
+            if (thermalImg.getPixel(x, y).a > 0) {
+              hasThermalGlow = true;
+              break;
+            }
+          }
+          if (hasThermalGlow) break;
+        }
+        expect(hasThermalGlow, isTrue);
+      });
+
+      test('Pristine PDF document produces 100% transparent thermal baseline (zero false positives)', () {
+        final pristinePdf = '''
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>
+endobj
+xref
+0 4
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+trailer
+<< /Size 4 /Root 1 0 R /Producer (Clean Compiler) >>
+startxref
+180
+%%EOF
+''';
+        final bytes = Uint8List.fromList(utf8.encode(pristinePdf));
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: bytes,
+          fileName: 'clean_invoice.pdf',
+        );
+
+        expect(report.elaAnalysis, isNotNull);
+        final ela = report.elaAnalysis!;
+        expect(ela.hasSplicingAnomaly, isFalse);
+        expect(ela.changedContentCount, equals(0));
+        expect(ela.overlappedContentCount, equals(0));
+        expect(ela.hiddenContentCount, equals(0));
+
+        // Pristine page thermal canvas must have zero alpha across all pixels!
+        final thermalImg = img.decodeImage(ela.thermalImageBytes!)!;
+        int visiblePixels = 0;
+        for (int y = 0; y < thermalImg.height; y++) {
+          for (int x = 0; x < thermalImg.width; x++) {
+            if (thermalImg.getPixel(x, y).a > 0) {
+              visiblePixels++;
+            }
+          }
+        }
+        expect(visiblePixels, equals(0), reason: 'Pristine pages must have completely transparent thermal overlay');
+      });
+
+      test('Outlier-resilient image ELA suppresses single-pixel edge ringing on natural documents', () {
+        // High-contrast black box on white background (simulating text/table on paper)
+        final testDoc = img.Image(width: 120, height: 120);
+        img.fill(testDoc, color: img.ColorRgb8(255, 255, 255));
+        for (int x = 30; x < 90; x++) {
+          for (int y = 50; y < 60; y++) {
+            testDoc.setPixelRgb(x, y, 0, 0, 0); // Crisp black bar
+          }
+        }
+
+        final bytes = Uint8List.fromList(img.encodePng(testDoc));
+        final report = DocumentForensicService.analyzeDocument(
+          bytes: bytes,
+          fileName: 'table_scan.png',
+        );
+
+        expect(report.elaAnalysis, isNotNull);
+        final ela = report.elaAnalysis!;
+        // The baseline should be uniform without false splicing flag
+        expect(ela.hasSplicingAnomaly, isFalse);
+      });
+    });
   });
 }
 

@@ -11,13 +11,19 @@ import '../models/document_forensic_models.dart';
 
 class DocumentForensicService {
   /// Generates a fast raster preview and ELA tensor for a specific PDF or image page
-  static DocumentElaAnalysis computeQuickPreview(Uint8List bytes, {int targetPageIndex = 0, int totalPageCount = 1}) {
+  static DocumentElaAnalysis computeQuickPreview(
+    Uint8List bytes, {
+    int targetPageIndex = 0,
+    int totalPageCount = 1,
+    Uint8List? nativeRasterBytes,
+  }) {
     if (_isPdfBytes(bytes)) {
       return _computePdfDocumentEla(
         bytes,
         isTampered: false,
         targetPageIndex: targetPageIndex,
         totalPageCount: totalPageCount,
+        nativeRasterBytes: nativeRasterBytes,
       );
     }
     return _computeElaTensor(bytes, isTampered: false);
@@ -1815,20 +1821,10 @@ class DocumentForensicService {
     int totalPageCount = 1,
     Uint8List? nativeRasterBytes,
   }) {
+    img.Image? nativeRasterDecoded;
     if (nativeRasterBytes != null && nativeRasterBytes.isNotEmpty) {
       try {
-        final decodedRaster = img.decodeImage(nativeRasterBytes);
-        if (decodedRaster != null) {
-          return _computeRealImageEla(
-            decodedRaster,
-            isTampered: isTampered,
-            editorSignatures: editorSignatures,
-            hasTrailingPayload: hasTrailingPayload,
-            trailingPayloadBytes: trailingPayloadBytes,
-            pageNumber: targetPageIndex + 1,
-            totalPageCount: totalPageCount,
-          );
-        }
+        nativeRasterDecoded = img.decodeImage(nativeRasterBytes);
       } catch (_) {}
     }
 
@@ -1880,14 +1876,24 @@ class DocumentForensicService {
       }
     }
 
+    final canvasW = 600;
+    final canvasH = (canvasW * (pageHeight / pageWidth)).round().clamp(500, 1100);
+    final heatMap = Float32List(canvasW * canvasH);
     final cellHits = <int, int>{};
     final hiddenCells = <int>{};
 
-    void markArea(double x, double y, double w, double h, {bool isHidden = false}) {
+    void markArea(double x, double y, double w, double h, {bool isHidden = false, bool isTopDown = false}) {
       final colStart = (x / pageWidth * 16).floor().clamp(0, 15);
       final colEnd = ((x + math.max(w, 20.0)) / pageWidth * 16).floor().clamp(0, 15);
-      final rowStart = ((1.0 - (y + math.max(h, 15.0)) / pageHeight) * 16).floor().clamp(0, 15);
-      final rowEnd = ((1.0 - y / pageHeight) * 16).floor().clamp(0, 15);
+      final int rowStart;
+      final int rowEnd;
+      if (isTopDown) {
+        rowStart = (y / pageHeight * 16).floor().clamp(0, 15);
+        rowEnd = ((y + math.max(h, 15.0)) / pageHeight * 16).floor().clamp(0, 15);
+      } else {
+        rowStart = ((1.0 - (y + math.max(h, 15.0)) / pageHeight) * 16).floor().clamp(0, 15);
+        rowEnd = ((1.0 - y / pageHeight) * 16).floor().clamp(0, 15);
+      }
 
       for (int r = math.min(rowStart, rowEnd); r <= math.max(rowStart, rowEnd); r++) {
         for (int c = colStart; c <= colEnd; c++) {
@@ -1901,12 +1907,39 @@ class DocumentForensicService {
       }
     }
 
+    void injectHeat(double x, double y, double w, double h, double intensity, {bool isTopDown = false}) {
+      final cx1 = ((x / pageWidth) * canvasW).round().clamp(0, canvasW - 1);
+      final cx2 = (((x + math.max(w, 14.0)) / pageWidth) * canvasW).round().clamp(cx1 + 1, canvasW);
+      final int cy1;
+      final int cy2;
+      if (isTopDown) {
+        cy1 = ((y / pageHeight) * canvasH).round().clamp(0, canvasH - 1);
+        cy2 = (((y + math.max(h, 10.0)) / pageHeight) * canvasH).round().clamp(cy1 + 1, canvasH);
+      } else {
+        cy1 = ((1.0 - (y + math.max(h, 10.0)) / pageHeight) * canvasH).round().clamp(0, canvasH - 1);
+        cy2 = ((1.0 - y / pageHeight) * canvasH).round().clamp(cy1 + 1, canvasH);
+      }
+      final topY = math.min(cy1, cy2);
+      final bottomY = math.max(cy1, cy2);
+
+      for (int py = topY; py < bottomY; py++) {
+        final rowOff = py * canvasW;
+        for (int px = cx1; px < cx2; px++) {
+          final idx = rowOff + px;
+          if (intensity > heatMap[idx]) {
+            heatMap[idx] = intensity;
+          }
+        }
+      }
+    }
+
     // 2. Detect Places Where Changes Are Made (Altered text, modified numerical tokens, appended revision streams)
     if (revisionDiff != null && revisionDiff.hasChanges) {
       for (final line in extractedTextLines) {
         for (final token in revisionDiff.addedTokens) {
           if (line.text.contains(token)) {
-            markArea(line.bounds.left, line.bounds.top, line.bounds.width, line.bounds.height);
+            markArea(line.bounds.left, line.bounds.top, line.bounds.width, line.bounds.height, isTopDown: true);
+            injectHeat(line.bounds.left, line.bounds.top, line.bounds.width, line.bounds.height, 0.96, isTopDown: true);
           }
         }
       }
@@ -1919,13 +1952,15 @@ class DocumentForensicService {
           if (tmMatch != null) {
             final tx = double.tryParse(tmMatch.group(5)!) ?? 0.0;
             final ty = double.tryParse(tmMatch.group(6)!) ?? 0.0;
-            markArea(tx, ty, 85.0, 22.0);
+            markArea(tx, ty, 85.0, 22.0, isTopDown: false);
+            injectHeat(tx, ty, 85.0, 22.0, 0.95, isTopDown: false);
           } else {
             final tdMatch = RegExp(r'([-\d\.]+)\s+([-\d\.]+)\s+Td').allMatches(snippet).lastOrNull;
             if (tdMatch != null) {
               final dx = double.tryParse(tdMatch.group(1)!) ?? 0.0;
               final dy = double.tryParse(tdMatch.group(2)!) ?? 0.0;
-              markArea(dx, dy, 85.0, 22.0);
+              markArea(dx, dy, 85.0, 22.0, isTopDown: false);
+              injectHeat(dx, dy, 85.0, 22.0, 0.95, isTopDown: false);
             }
           }
         }
@@ -1937,7 +1972,8 @@ class DocumentForensicService {
         for (final m in appTmMatches.take(40)) {
           final tx = double.tryParse(m.group(5)!) ?? 0.0;
           final ty = double.tryParse(m.group(6)!) ?? 0.0;
-          markArea(tx, ty, 75.0, 20.0);
+          markArea(tx, ty, 75.0, 20.0, isTopDown: false);
+          injectHeat(tx, ty, 75.0, 20.0, 0.92, isTopDown: false);
         }
       }
     }
@@ -1954,7 +1990,8 @@ class DocumentForensicService {
         final ry = double.tryParse(yStr) ?? 0.0;
         final rw = double.tryParse(wStr) ?? 50.0;
         final rh = double.tryParse(hStr) ?? 15.0;
-        markArea(rx, ry, rw, rh);
+        markArea(rx, ry, rw, rh, isTopDown: false);
+        injectHeat(rx, ry, rw, rh, 0.88, isTopDown: false);
       }
     }
 
@@ -2027,7 +2064,8 @@ class DocumentForensicService {
         final h = (y2 - y1).abs();
 
         if (w > 0 && h > 0 && w <= pageWidth * 1.05 && h <= pageHeight * 1.05) {
-          markArea(minX, minY, w, h);
+          markArea(minX, minY, w, h, isTopDown: false);
+          injectHeat(minX, minY, w, h, 0.85, isTopDown: false);
 
           final stMatch = RegExp(r'/Subtype\s*/(\w+)').firstMatch(snippet);
           final subtype = stMatch?.group(1) ?? 'Annot';
@@ -2063,8 +2101,16 @@ class DocumentForensicService {
       if (tmMatch != null) {
         final tx = double.tryParse(tmMatch.group(5)!) ?? 0.0;
         final ty = double.tryParse(tmMatch.group(6)!) ?? 0.0;
-        markArea(tx, ty, 70.0, 18.0, isHidden: true);
+        markArea(tx, ty, 70.0, 18.0, isHidden: true, isTopDown: false);
+        injectHeat(tx, ty, 70.0, 18.0, 0.82, isTopDown: false);
       }
+    }
+
+    if (hasTrailingPayload) {
+      for (int c = 0; c < 16; c++) {
+        hiddenCells.add(15 * 16 + c);
+      }
+      injectHeat(0, 0, pageWidth, 25.0, 0.90, isTopDown: false);
     }
 
     // Resolve Changed vs Overlapped metrics
@@ -2080,8 +2126,9 @@ class DocumentForensicService {
 
     // Dynamic True Coordinate Logs
     final descriptions = <String>[];
-    if (cellHits.isNotEmpty) {
-      final keys = cellHits.keys.toList()..sort();
+    if (cellHits.isNotEmpty || hiddenCells.isNotEmpty) {
+      final allIndices = {...cellHits.keys, ...hiddenCells};
+      final keys = allIndices.toList()..sort();
       final rStart = keys.first ~/ 16;
       final rEnd = keys.last ~/ 16;
       final cStart = keys.map((k) => k % 16).reduce(math.min);
@@ -2101,6 +2148,9 @@ class DocumentForensicService {
       descriptions.add('Spatial Residual Cluster in $quadrant [X: $xStart%..$xEnd%, Y: $yStart%..$yEnd%]');
       if (overlappedCells.isNotEmpty) {
         descriptions.add('Multi-Layer Delta Overlap Detected (${overlappedCells.length} intersected vectors)');
+      }
+      if (hasTrailingPayload) {
+        descriptions.add('Trailing Injected Payload (+$trailingPayloadBytes bytes past document %%EOF)');
       }
     }
 
@@ -2206,13 +2256,13 @@ class DocumentForensicService {
     Uint8List? previewBytes;
     Uint8List? thermalBytes;
     Uint8List? elaBytes;
-    final canvasW = 600;
-    final canvasH = (canvasW * (pageHeight / pageWidth)).round().clamp(500, 1100);
     try {
-      final embedded = _extractEmbeddedJpeg(bytes);
-      img.Image? baseImg;
-      if (embedded != null) {
-        baseImg = img.decodeImage(embedded);
+      img.Image? baseImg = nativeRasterDecoded;
+      if (baseImg == null) {
+        final embedded = _extractEmbeddedJpeg(bytes);
+        if (embedded != null) {
+          baseImg = img.decodeImage(embedded);
+        }
       }
 
       final docCanvas = img.Image(width: canvasW, height: canvasH);
@@ -2261,8 +2311,6 @@ class DocumentForensicService {
           }
         }
       }
-
-      final heatMap = Float32List(canvasW * canvasH);
 
       // 1. Draw continuous handwritten ink strokes (signatures, scribbles, pen notes)
         for (final stroke in parsedStrokes) {
@@ -2361,23 +2409,23 @@ class DocumentForensicService {
           }
         }
 
-      final bool hasVectorActivity = parsedStrokes.isNotEmpty || parsedAnnotations.isNotEmpty;
+      final bool hasAnyHeat = cellHits.isNotEmpty || hiddenCells.isNotEmpty || parsedStrokes.isNotEmpty || parsedAnnotations.isNotEmpty;
 
-      if (hasVectorActivity) {
-        // High-precision Gaussian thermal radiation aura hugging actual ink & text
+      if (hasAnyHeat) {
+        // High-precision 11-tap Gaussian thermal radiation aura hugging actual ink, altered text, whiteouts, and annotations
         final blurred = Float32List(canvasW * canvasH);
         final temp = Float32List(canvasW * canvasH);
-        const kWeights = [1, 2, 3, 4, 3, 2, 1];
-        const kSum = 16.0;
+        const kWeights = [1, 4, 11, 24, 38, 46, 38, 24, 11, 4, 1];
+        const kSum = 202.0;
 
         // Horizontal blur pass
         for (int y = 0; y < canvasH; y++) {
           final rowOff = y * canvasW;
           for (int x = 0; x < canvasW; x++) {
             double acc = 0.0;
-            for (int k = -3; k <= 3; k++) {
+            for (int k = -5; k <= 5; k++) {
               final kx = (x + k).clamp(0, canvasW - 1);
-              acc += heatMap[rowOff + kx] * kWeights[k + 3];
+              acc += heatMap[rowOff + kx] * kWeights[k + 5];
             }
             temp[rowOff + x] = acc / kSum;
           }
@@ -2388,9 +2436,9 @@ class DocumentForensicService {
           final rowOff = y * canvasW;
           for (int x = 0; x < canvasW; x++) {
             double acc = 0.0;
-            for (int k = -3; k <= 3; k++) {
+            for (int k = -5; k <= 5; k++) {
               final ky = (y + k).clamp(0, canvasH - 1);
-              acc += temp[ky * canvasW + x] * kWeights[k + 3];
+              acc += temp[ky * canvasW + x] * kWeights[k + 5];
             }
             blurred[rowOff + x] = acc / kSum;
           }
@@ -2401,7 +2449,7 @@ class DocumentForensicService {
           final rowOff = py * canvasW;
           for (int px = 0; px < canvasW; px++) {
             final v = blurred[rowOff + px];
-            if (v > 0.04) {
+            if (v > 0.035) {
               final (tr, tg, tb) = _getThermalRgb(v);
               final alpha = (math.min(235.0, 40.0 + v * 200.0)).toInt();
               thermalCanvas.setPixelRgba(px, py, tr, tg, tb, alpha);
@@ -2416,18 +2464,11 @@ class DocumentForensicService {
           }
         }
       } else {
-        // Fallback for raster/stream tampering with no vector annotations
+        // Pristine unedited document page - clean transparent baseline
         for (int py = 0; py < canvasH; py++) {
-          final bY = (py * 16 ~/ canvasH).clamp(0, 15);
           for (int px = 0; px < canvasW; px++) {
-            final bX = (px * 16 ~/ canvasW).clamp(0, 15);
-            final val = tensor[bY * 16 + bX];
-            final (tr, tg, tb) = _getThermalRgb(val);
-            final alpha = (val > 0.45 ? (val * 220).toInt().clamp(60, 230) : 0);
-            thermalCanvas.setPixelRgba(px, py, tr, tg, tb, alpha);
-
-            final amp = (val * 255).toInt().clamp(0, 255);
-            elaCanvas.setPixelRgb(px, py, amp, (amp * 0.7).toInt(), (amp * 0.4).toInt());
+            thermalCanvas.setPixelRgba(px, py, 0, 0, 0, 0);
+            elaCanvas.setPixelRgb(px, py, 15, 18, 24);
           }
         }
       }
@@ -2570,19 +2611,57 @@ class DocumentForensicService {
     }
 
     final globalMean = totalError / (width * height);
-    // Ambient noise cutoff: standard baseline error is transparent (alpha = 0)
-    final ambientCutoff = math.max(0.022, globalMean * 1.35);
+    double deltaVarSum = 0.0;
+    for (int i = 0; i < pixelDeltas.length; i++) {
+      final d = pixelDeltas[i] - globalMean;
+      deltaVarSum += d * d;
+    }
+    final pixelStdDev = math.sqrt(deltaVarSum / pixelDeltas.length);
+    final ambientCutoff = math.max(0.024, math.max(globalMean * 1.35, globalMean + pixelStdDev * 1.2));
+
+    // 98th percentile ceiling to prevent single-pixel noise from suppressing true anomalies
+    final sampleStep = math.max(1, pixelDeltas.length ~/ 1000);
+    final sampleList = <double>[];
+    for (int i = 0; i < pixelDeltas.length; i += sampleStep) {
+      if (pixelDeltas[i] > ambientCutoff) {
+        sampleList.add(pixelDeltas[i]);
+      }
+    }
+    double effectiveMax = maxError;
+    if (sampleList.length > 20) {
+      sampleList.sort();
+      effectiveMax = sampleList[(sampleList.length * 0.98).toInt()];
+    }
+    effectiveMax = math.max(effectiveMax, ambientCutoff + 0.05);
+
+    // 3x3 local average spatial smoothing to suppress single-pixel edge ringing on natural images
+    final smoothedDeltas = Float32List(width * height);
+    for (int y = 0; y < height; y++) {
+      final yPrev = math.max(0, y - 1);
+      final yNext = math.min(height - 1, y + 1);
+      final rowOff = y * width;
+      final prevOff = yPrev * width;
+      final nextOff = yNext * width;
+      for (int x = 0; x < width; x++) {
+        final xPrev = math.max(0, x - 1);
+        final xNext = math.min(width - 1, x + 1);
+        final sum = pixelDeltas[prevOff + xPrev] + pixelDeltas[prevOff + x] + pixelDeltas[prevOff + xNext] +
+                    pixelDeltas[rowOff + xPrev] + pixelDeltas[rowOff + x] + pixelDeltas[rowOff + xNext] +
+                    pixelDeltas[nextOff + xPrev] + pixelDeltas[nextOff + x] + pixelDeltas[nextOff + xNext];
+        smoothedDeltas[rowOff + x] = sum / 9.0;
+      }
+    }
 
     // 2. Generate false-color thermal overlay: pristine baseline is transparent, anomalies glow!
     for (int y = 0; y < height; y++) {
       final rowOffset = y * width;
       for (int x = 0; x < width; x++) {
-        final pError = pixelDeltas[rowOffset + x];
+        final pError = smoothedDeltas[rowOffset + x];
         if (pError <= ambientCutoff) {
           // Zero alpha: completely transparent baseline allows the original document to show through cleanly
           thermalImage.setPixelRgba(x, y, 0, 0, 0, 0);
         } else {
-          final excess = ((pError - ambientCutoff) / math.max(0.02, maxError - ambientCutoff)).clamp(0.0, 1.0);
+          final excess = ((pError - ambientCutoff) / math.max(0.02, effectiveMax - ambientCutoff)).clamp(0.0, 1.0);
           final (tr, tg, tb) = _getThermalRgb(0.25 + excess * 0.75);
           final alpha = (excess * 190 + 55).clamp(55, 235).toInt();
           thermalImage.setPixelRgba(x, y, tr, tg, tb, alpha);
