@@ -29,6 +29,7 @@ class DocumentForensicService {
     required Uint8List bytes,
     required String fileName,
     List<ProvenanceRecord>? ledgerHistory,
+    List<Uint8List>? rasterPages,
   }) {
     final sha256Digest = sha256.convert(bytes).toString();
     final lowerName = fileName.toLowerCase();
@@ -142,7 +143,7 @@ class DocumentForensicService {
       ];
 
       // Perform deep forensic parsing as well to expose what changed
-      final subAnalysis = _performDeepForensics(bytes, lowerName, mimeType);
+      final subAnalysis = _performDeepForensics(bytes, lowerName, mimeType, rasterPages: rasterPages);
       anomalies.addAll(subAnalysis.anomalies);
 
       return DocumentForensicReport(
@@ -199,7 +200,7 @@ class DocumentForensicService {
     }
 
     // 3. Blind Deep Forensics for Unsealed Documents (Medical Bills, Govt IDs, Audio, Video, Text)
-    final forensicResult = _performDeepForensics(bytes, lowerName, mimeType);
+    final forensicResult = _performDeepForensics(bytes, lowerName, mimeType, rasterPages: rasterPages);
 
     DocumentForensicVerdict verdict;
     int confidence;
@@ -259,14 +260,15 @@ class DocumentForensicService {
   static _InternalForensicAnalysis _performDeepForensics(
     Uint8List bytes,
     String lowerName,
-    String mimeType,
-  ) {
+    String mimeType, {
+    List<Uint8List>? rasterPages,
+  }) {
     final category = _detectFileCategory(lowerName, mimeType);
 
     switch (category) {
       case ForensicFileCategory.document:
         if (mimeType == 'application/pdf' || lowerName.endsWith('.pdf')) {
-          return _analyzePdfForensics(bytes, lowerName);
+          return _analyzePdfForensics(bytes, lowerName, rasterPages: rasterPages);
         }
         return _analyzeGenericDocumentForensics(bytes, mimeType, lowerName);
 
@@ -285,7 +287,11 @@ class DocumentForensicService {
   }
 
   /// PDF Forensics: Incremental revisions, virtual printer flattening, Aadhaar UIDAI signature, font subsets, text diff
-  static _InternalForensicAnalysis _analyzePdfForensics(Uint8List bytes, String lowerName) {
+  static _InternalForensicAnalysis _analyzePdfForensics(
+    Uint8List bytes,
+    String lowerName, {
+    List<Uint8List>? rasterPages,
+  }) {
     final anomalies = <TamperAnomalyFlag>[];
     final editingTools = <String>{};
     final history = <DocumentRevisionEntry>[];
@@ -544,6 +550,11 @@ class DocumentForensicService {
     final List<DocumentElaAnalysis> pageElaAnalyses = [];
     final safePageLimit = math.min(totalPageCount, 25);
     for (int p = 0; p < safePageLimit; p++) {
+      Uint8List? nativeRaster;
+      if (rasterPages != null && p < rasterPages.length) {
+        nativeRaster = rasterPages[p];
+      }
+
       final pageEla = _computePdfDocumentEla(
         bytes,
         isTampered: isTampered,
@@ -555,6 +566,7 @@ class DocumentForensicService {
         trailingPayloadBytes: revAnalysis.trailingBytes,
         targetPageIndex: p,
         totalPageCount: totalPageCount,
+        nativeRasterBytes: nativeRaster,
       );
       pageElaAnalyses.add(pageEla);
     }
@@ -1801,7 +1813,25 @@ class DocumentForensicService {
     int trailingPayloadBytes = 0,
     int targetPageIndex = 0,
     int totalPageCount = 1,
+    Uint8List? nativeRasterBytes,
   }) {
+    if (nativeRasterBytes != null && nativeRasterBytes.isNotEmpty) {
+      try {
+        final decodedRaster = img.decodeImage(nativeRasterBytes);
+        if (decodedRaster != null) {
+          return _computeRealImageEla(
+            decodedRaster,
+            isTampered: isTampered,
+            editorSignatures: editorSignatures,
+            hasTrailingPayload: hasTrailingPayload,
+            trailingPayloadBytes: trailingPayloadBytes,
+            pageNumber: targetPageIndex + 1,
+            totalPageCount: totalPageCount,
+          );
+        }
+      } catch (_) {}
+    }
+
     final rawAscii = _bytesToAsciiString(bytes);
 
     // 1. Page Dimensions & Text Extraction via Syncfusion
@@ -1928,31 +1958,34 @@ class DocumentForensicService {
       }
     }
 
-    // Extract Ink strokes from /Subtype /Ink annotations
+    // Extract Ink strokes from /Subtype /Ink annotations (scoped strictly to target page)
     final parsedStrokes = <({List<({double x, double y})> points, int r, int g, int b})>[];
-    final inkBlocks = RegExp(r'/Subtype\s*/Ink([\s\S]*?)(?:/Subtype|/Annots|/Page|trailer|%%EOF|$)').allMatches(rawAscii);
-    for (final ib in inkBlocks) {
-      final snippet = ib.group(0)!;
-      final cMatch = RegExp(r'/C\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]').firstMatch(snippet);
-      final cr = ((double.tryParse(cMatch?.group(1) ?? '0.1') ?? 0.1) * 255).clamp(0, 255).toInt();
-      final cg = ((double.tryParse(cMatch?.group(2) ?? '0.3') ?? 0.3) * 255).clamp(0, 255).toInt();
-      final cb = ((double.tryParse(cMatch?.group(3) ?? '0.8') ?? 0.8) * 255).clamp(0, 255).toInt();
+    final bool hasPageAnnotations = docPages <= 1 || pageAnnotationBounds.isNotEmpty;
+    if (hasPageAnnotations) {
+      final inkBlocks = RegExp(r'/Subtype\s*/Ink([\s\S]*?)(?:/Subtype|/Annots|/Page|trailer|%%EOF|$)').allMatches(rawAscii);
+      for (final ib in inkBlocks) {
+        final snippet = ib.group(0)!;
+        final cMatch = RegExp(r'/C\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]').firstMatch(snippet);
+        final cr = ((double.tryParse(cMatch?.group(1) ?? '0.1') ?? 0.1) * 255).clamp(0, 255).toInt();
+        final cg = ((double.tryParse(cMatch?.group(2) ?? '0.3') ?? 0.3) * 255).clamp(0, 255).toInt();
+        final cb = ((double.tryParse(cMatch?.group(3) ?? '0.8') ?? 0.8) * 255).clamp(0, 255).toInt();
 
-      final inkListMatch = RegExp(r'/InkList\s*\[([\s\S]*?)\]\s*(?:/|>>)').firstMatch(snippet);
-      if (inkListMatch != null) {
-        final subpaths = RegExp(r'\[\s*([-\d\.\s]+)\s*\]').allMatches(inkListMatch.group(1)!);
-        for (final sp in subpaths) {
-          final rawNums = RegExp(r'[-\d\.]+').allMatches(sp.group(1)!).map((m) => double.tryParse(m.group(0)!) ?? 0.0).toList();
-          if (rawNums.length >= 4) {
-            final pts = <({double x, double y})>[];
-            for (int i = 0; i < rawNums.length - 1; i += 2) {
-              final x = rawNums[i];
-              final y = rawNums[i + 1];
-              pts.add((x: x, y: y));
-              // Mark macro area along the actual stroke trajectory
-              markArea(x - 6, y - 6, 12, 12);
+        final inkListMatch = RegExp(r'/InkList\s*\[([\s\S]*?)\]\s*(?:/|>>)').firstMatch(snippet);
+        if (inkListMatch != null) {
+          final subpaths = RegExp(r'\[\s*([-\d\.\s]+)\s*\]').allMatches(inkListMatch.group(1)!);
+          for (final sp in subpaths) {
+            final rawNums = RegExp(r'[-\d\.]+').allMatches(sp.group(1)!).map((m) => double.tryParse(m.group(0)!) ?? 0.0).toList();
+            if (rawNums.length >= 4) {
+              final pts = <({double x, double y})>[];
+              for (int i = 0; i < rawNums.length - 1; i += 2) {
+                final x = rawNums[i];
+                final y = rawNums[i + 1];
+                pts.add((x: x, y: y));
+                // Mark macro area along the actual stroke trajectory
+                markArea(x - 6, y - 6, 12, 12);
+              }
+              parsedStrokes.add((points: pts, r: cr, g: cg, b: cb));
             }
-            parsedStrokes.add((points: pts, r: cr, g: cg, b: cb));
           }
         }
       }
@@ -1961,62 +1994,64 @@ class DocumentForensicService {
     final annotRectRegex = RegExp(r'/Rect\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]');
     final parsedAnnotations = <({double x1, double y1, double x2, double y2, String subtype, int r, int g, int b, String? text})>[];
 
-    for (final m in annotRectRegex.allMatches(rawAscii).take(120)) {
-      final start = math.max(0, m.start - 120);
-      final end = math.min(rawAscii.length, m.end + 120);
-      final snippet = rawAscii.substring(start, end);
+    if (hasPageAnnotations) {
+      for (final m in annotRectRegex.allMatches(rawAscii).take(120)) {
+        final start = math.max(0, m.start - 120);
+        final end = math.min(rawAscii.length, m.end + 120);
+        final snippet = rawAscii.substring(start, end);
 
-      // Skip off-screen / popup comment sidebars
-      if (snippet.contains('/Subtype/Popup') || snippet.contains('/Subtype /Popup')) {
-        continue;
-      }
+        // Skip off-screen / popup comment sidebars
+        if (snippet.contains('/Subtype/Popup') || snippet.contains('/Subtype /Popup')) {
+          continue;
+        }
 
-      // If this annotation is an Ink stroke and we already parsed its exact stroke paths,
-      // skip calling markArea on the giant bounding box to avoid false macro grid inflation!
-      final isInk = snippet.contains('/Subtype/Ink') || snippet.contains('/Subtype /Ink');
-      if (isInk && parsedStrokes.isNotEmpty) {
-        continue;
-      }
+        // If this annotation is an Ink stroke and we already parsed its exact stroke paths,
+        // skip calling markArea on the giant bounding box to avoid false macro grid inflation!
+        final isInk = snippet.contains('/Subtype/Ink') || snippet.contains('/Subtype /Ink');
+        if (isInk && parsedStrokes.isNotEmpty) {
+          continue;
+        }
 
-      final x1 = double.tryParse(m.group(1)!) ?? 0.0;
-      final y1 = double.tryParse(m.group(2)!) ?? 0.0;
-      final x2 = double.tryParse(m.group(3)!) ?? 0.0;
-      final y2 = double.tryParse(m.group(4)!) ?? 0.0;
+        final x1 = double.tryParse(m.group(1)!) ?? 0.0;
+        final y1 = double.tryParse(m.group(2)!) ?? 0.0;
+        final x2 = double.tryParse(m.group(3)!) ?? 0.0;
+        final y2 = double.tryParse(m.group(4)!) ?? 0.0;
 
-      // Skip off-page or zero-area annotations
-      if (x1 >= pageWidth || y1 >= pageHeight) continue;
-      if (x2 <= 0 || y2 <= 0) continue;
+        // Skip off-page or zero-area annotations
+        if (x1 >= pageWidth || y1 >= pageHeight) continue;
+        if (x2 <= 0 || y2 <= 0) continue;
 
-      final minX = math.max(0.0, math.min(x1, x2));
-      final minY = math.max(0.0, math.min(y1, y2));
-      final w = (x2 - x1).abs();
-      final h = (y2 - y1).abs();
+        final minX = math.max(0.0, math.min(x1, x2));
+        final minY = math.max(0.0, math.min(y1, y2));
+        final w = (x2 - x1).abs();
+        final h = (y2 - y1).abs();
 
-      if (w > 0 && h > 0 && w <= pageWidth * 1.05 && h <= pageHeight * 1.05) {
-        markArea(minX, minY, w, h);
+        if (w > 0 && h > 0 && w <= pageWidth * 1.05 && h <= pageHeight * 1.05) {
+          markArea(minX, minY, w, h);
 
-        final stMatch = RegExp(r'/Subtype\s*/(\w+)').firstMatch(snippet);
-        final subtype = stMatch?.group(1) ?? 'Annot';
+          final stMatch = RegExp(r'/Subtype\s*/(\w+)').firstMatch(snippet);
+          final subtype = stMatch?.group(1) ?? 'Annot';
 
-        final cMatch = RegExp(r'/C\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]').firstMatch(snippet);
-        final cr = ((double.tryParse(cMatch?.group(1) ?? '0.8') ?? 0.8) * 255).clamp(0.0, 255.0).toInt();
-        final cg = ((double.tryParse(cMatch?.group(2) ?? '0.2') ?? 0.2) * 255).clamp(0.0, 255.0).toInt();
-        final cb = ((double.tryParse(cMatch?.group(3) ?? '0.4') ?? 0.4) * 255).clamp(0.0, 255.0).toInt();
+          final cMatch = RegExp(r'/C\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]').firstMatch(snippet);
+          final cr = ((double.tryParse(cMatch?.group(1) ?? '0.8') ?? 0.8) * 255).clamp(0.0, 255.0).toInt();
+          final cg = ((double.tryParse(cMatch?.group(2) ?? '0.2') ?? 0.2) * 255).clamp(0.0, 255.0).toInt();
+          final cb = ((double.tryParse(cMatch?.group(3) ?? '0.4') ?? 0.4) * 255).clamp(0.0, 255.0).toInt();
 
-        final ctMatch = RegExp(r'/Contents\s*\((.*?)\)').firstMatch(snippet);
-        final contents = ctMatch?.group(1);
+          final ctMatch = RegExp(r'/Contents\s*\((.*?)\)').firstMatch(snippet);
+          final contents = ctMatch?.group(1);
 
-        parsedAnnotations.add((
-          x1: minX,
-          y1: minY,
-          x2: minX + w,
-          y2: minY + h,
-          subtype: subtype,
-          r: cr,
-          g: cg,
-          b: cb,
-          text: contents,
-        ));
+          parsedAnnotations.add((
+            x1: minX,
+            y1: minY,
+            x2: minX + w,
+            y2: minY + h,
+            subtype: subtype,
+            r: cr,
+            g: cg,
+            b: cb,
+            text: contents,
+          ));
+        }
       }
     }
 
@@ -2453,6 +2488,8 @@ class DocumentForensicService {
     List<String>? editorSignatures,
     bool hasTrailingPayload = false,
     int trailingPayloadBytes = 0,
+    int pageNumber = 1,
+    int totalPageCount = 1,
   }) {
     img.Image procImage = image;
     if (procImage.width > 1200 || procImage.height > 1200) {
@@ -2652,6 +2689,8 @@ class DocumentForensicService {
       overlappedCellIndices: overlappedCells.toList()..sort(),
       hiddenCellIndices: hiddenCells.toList()..sort(),
       hotspotDescriptions: descriptions.take(8).toList(),
+      pageNumber: pageNumber,
+      totalPageCount: totalPageCount,
     );
   }
 

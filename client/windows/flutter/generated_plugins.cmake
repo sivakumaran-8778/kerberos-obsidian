@@ -8,6 +8,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   desktop_drop
   flutter_webrtc
   objectbox_flutter_libs
+  printing
   record_windows
   url_launcher_windows
 )

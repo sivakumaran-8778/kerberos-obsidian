@@ -16,6 +16,7 @@ import 'dart:convert';
 import '../models/document_forensic_models.dart';
 import '../services/document_forensic_service.dart';
 import '../services/crypto_engine.dart';
+import '../services/pdf_rasterizer_helper.dart';
 import '../../verification/presentation/widgets/steganography_spatial_matrix.dart';
 import '../../radar/services/file_download_helper.dart';
 import './widgets/zk_redact_selection_dialog.dart';
@@ -43,6 +44,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   Map<String, dynamic>? _redactionCoords;
   bool _isProvingZk = false;
   int _selectedForensicPageIndex = 0;
+  List<Uint8List>? _pdfPageRasters;
 
   DocumentElaAnalysis get _activeElaAnalysis {
     if (_report == null) {
@@ -122,6 +124,21 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       // Yield to let UI update and show the scan animation
       await Future.delayed(const Duration(milliseconds: 100));
 
+      List<Uint8List>? rasterPages;
+      final isPdf = fileName.toLowerCase().endsWith('.pdf') ||
+          (bytes.length >= 4 &&
+              bytes[0] == 0x25 &&
+              bytes[1] == 0x50 &&
+              bytes[2] == 0x44 &&
+              bytes[3] == 0x46);
+      if (isPdf) {
+        try {
+          rasterPages = await PdfRasterizerHelper.rasterizePdfPages(bytes);
+        } catch (e) {
+          debugPrint('Notice: PDF rasterization for forensics screen: $e');
+        }
+      }
+
       final ledger = ref.read(ledgerProvider);
       final history = ledger.getHistory();
 
@@ -132,12 +149,14 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           bytes: bytes,
           fileName: fileName,
           ledgerHistory: history,
+          rasterPages: rasterPages,
         ),
       );
 
       if (mounted) {
         setState(() {
           _report = report;
+          _pdfPageRasters = rasterPages;
           _isAnalyzing = false;
           _selectedForensicPageIndex = 0;
           _hoveredElaIndex = null;
@@ -153,15 +172,30 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
       debugPrint('Background forensic compute error: $e\n$stack');
       // Direct fallback in case background isolate has serialization issues
       try {
+        List<Uint8List>? rasterPages;
+        final isPdf = fileName.toLowerCase().endsWith('.pdf') ||
+            (bytes.length >= 4 &&
+                bytes[0] == 0x25 &&
+                bytes[1] == 0x50 &&
+                bytes[2] == 0x44 &&
+                bytes[3] == 0x46);
+        if (isPdf) {
+          try {
+            rasterPages = await PdfRasterizerHelper.rasterizePdfPages(bytes);
+          } catch (_) {}
+        }
+
         final ledger = ref.read(ledgerProvider);
         final report = DocumentForensicService.analyzeDocument(
           bytes: bytes,
           fileName: fileName,
           ledgerHistory: ledger.getHistory(),
+          rasterPages: rasterPages,
         );
         if (mounted) {
           setState(() {
             _report = report;
+            _pdfPageRasters = rasterPages;
             _isAnalyzing = false;
             _selectedForensicPageIndex = 0;
             _hoveredElaIndex = null;
@@ -195,9 +229,11 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   void _resetAudit() {
     setState(() {
       _report = null;
+      _pdfPageRasters = null;
       _isAnalyzing = false;
       _hoveredElaIndex = null;
       _redactedImageBytes = null;
+      _redactedFileBytes = null;
       _zkProofData = null;
       _redactionCoords = null;
       _isProvingZk = false;
@@ -796,13 +832,18 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
               context: context,
               builder: (context) => ZkRedactSelectionDialog(
                 imageBytes: sourceFileBytes,
-                previewBytes: currentEla.previewImageBytes,
+                previewBytes: (_pdfPageRasters != null && _selectedForensicPageIndex < _pdfPageRasters!.length)
+                    ? _pdfPageRasters![_selectedForensicPageIndex]
+                    : currentEla.previewImageBytes,
+                allPagePreviews: _pdfPageRasters,
                 pageIndex: _selectedForensicPageIndex,
                 totalPages: report.totalPages,
               ),
             );
 
             if (coords == null) return; // User cancelled
+
+            final targetPageIndex = (coords['pageIndex'] as int?) ?? _selectedForensicPageIndex;
 
             setState(() {
               _isProvingZk = true;
@@ -817,18 +858,30 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 newRedactedFileBytes = CryptoEngineWeb.applyPdfBlackout(
                   sourceFileBytes,
                   coords,
-                  targetPageIndex: _selectedForensicPageIndex,
+                  targetPageIndex: targetPageIndex,
                   canvasWidth: (coords['canvasWidth'] as num?)?.toDouble() ?? (currentEla.imageWidth > 0 ? currentEla.imageWidth.toDouble() : 612.0),
                   canvasHeight: (coords['canvasHeight'] as num?)?.toDouble() ?? (currentEla.imageHeight > 0 ? currentEla.imageHeight.toDouble() : 792.0),
                 );
 
                 // 3. Re-render the fast raster preview showing the blacked-out page
-                final previewEla = DocumentForensicService.computeQuickPreview(
-                  newRedactedFileBytes,
-                  targetPageIndex: _selectedForensicPageIndex,
-                  totalPageCount: report.totalPages,
-                );
-                newRedactedImageBytes = previewEla.previewImageBytes ?? previewEla.elaImageBytes ?? currentEla.previewImageBytes!;
+                List<Uint8List>? newRasters;
+                try {
+                  newRasters = await PdfRasterizerHelper.rasterizePdfPages(newRedactedFileBytes);
+                } catch (_) {}
+
+                if (newRasters != null && newRasters.isNotEmpty) {
+                  _pdfPageRasters = newRasters;
+                  newRedactedImageBytes = (targetPageIndex < newRasters.length)
+                      ? newRasters[targetPageIndex]
+                      : newRasters.first;
+                } else {
+                  final previewEla = DocumentForensicService.computeQuickPreview(
+                    newRedactedFileBytes,
+                    targetPageIndex: targetPageIndex,
+                    totalPageCount: report.totalPages,
+                  );
+                  newRedactedImageBytes = previewEla.previewImageBytes ?? previewEla.elaImageBytes ?? currentEla.previewImageBytes!;
+                }
               } else {
                 newRedactedFileBytes = CryptoEngineWeb.applyPixelBlackout(sourceFileBytes, coords);
                 newRedactedImageBytes = newRedactedFileBytes;
@@ -847,6 +900,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                   _redactedImageBytes = newRedactedImageBytes;
                   _zkProofData = result;
                   _redactionCoords = coords;
+                  _selectedForensicPageIndex = targetPageIndex;
                   _isProvingZk = false;
                 });
 
@@ -856,7 +910,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                     behavior: SnackBarBehavior.floating,
                     content: Text(
                       isPdf
-                          ? 'ZK-REDACT APPLIED: PDF Page ${_selectedForensicPageIndex + 1} redacted & Groth16 proof bound.'
+                          ? 'ZK-REDACT APPLIED: PDF Page ${targetPageIndex + 1} redacted & Groth16 proof bound.'
                           : 'ZK-REDACT APPLIED: Sensitive pixels obliterated & Groth16 proof bound.',
                       style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                     ),
@@ -2567,7 +2621,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
 
   Widget _buildElaVisualCanvas(DocumentElaAnalysis ela, double availableWidth) {
     // Mode 0 is the 16x16 Spatial Residual Matrix from user reference image
-    if (_elaViewMode == 0 || ela.previewImageBytes == null) {
+    if (_elaViewMode == 0 || (ela.previewImageBytes == null && _pdfPageRasters == null)) {
       return Center(
         child: _buildElaGrid(ela),
       );
@@ -2585,7 +2639,9 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             _redactionCoords!['pageIndex'] == _selectedForensicPageIndex &&
             _redactedImageBytes != null)
         ? _redactedImageBytes!
-        : ela.previewImageBytes!;
+        : (_pdfPageRasters != null && _selectedForensicPageIndex < _pdfPageRasters!.length
+            ? _pdfPageRasters![_selectedForensicPageIndex]
+            : (ela.previewImageBytes ?? ela.elaImageBytes!));
 
     Widget imageStack;
     if (_elaViewMode == 1) {
@@ -4480,11 +4536,13 @@ class _ForensicAnalysisJob {
   final Uint8List bytes;
   final String fileName;
   final List<ProvenanceRecord>? ledgerHistory;
+  final List<Uint8List>? rasterPages;
 
   const _ForensicAnalysisJob({
     required this.bytes,
     required this.fileName,
     required this.ledgerHistory,
+    this.rasterPages,
   });
 }
 
@@ -4493,6 +4551,7 @@ DocumentForensicReport _runForensicAnalysisCompute(_ForensicAnalysisJob job) {
     bytes: job.bytes,
     fileName: job.fileName,
     ledgerHistory: job.ledgerHistory,
+    rasterPages: job.rasterPages,
   );
 }
 

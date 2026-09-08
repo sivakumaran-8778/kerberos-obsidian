@@ -179,6 +179,69 @@ void main() {
       expect(verification['status'], equals('OK'));
     });
 
+    test('multi-page PDF analysis with per-page raster injection and Page 2 blackout targeting', () async {
+      // 1. Generate 2-page PDF
+      final doc = PdfDocument();
+      doc.pages.add().graphics.drawString(
+        'PAGE 1 ORIGINAL CONTENT',
+        PdfStandardFont(PdfFontFamily.helvetica, 12),
+        bounds: const Rect.fromLTWH(30, 30, 300, 20),
+      );
+      doc.pages.add().graphics.drawString(
+        'PAGE 2 TARGET FOR REDACTION',
+        PdfStandardFont(PdfFontFamily.helvetica, 12),
+        bounds: const Rect.fromLTWH(30, 30, 300, 20),
+      );
+      final pdfBytes = Uint8List.fromList(doc.saveSync());
+      doc.dispose();
+
+      // Create two distinct raster images for Page 1 and Page 2
+      final raster1 = img.Image(width: 200, height: 260);
+      img.fill(raster1, color: img.ColorRgb8(240, 240, 240));
+      final raster2 = img.Image(width: 200, height: 260);
+      img.fill(raster2, color: img.ColorRgb8(220, 220, 230));
+
+      final rasterBytes1 = Uint8List.fromList(img.encodePng(raster1));
+      final rasterBytes2 = Uint8List.fromList(img.encodePng(raster2));
+
+      // 2. Analyze document passing per-page rasters
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: pdfBytes,
+        fileName: 'multipage_target.pdf',
+        rasterPages: [rasterBytes1, rasterBytes2],
+      );
+
+      expect(report.totalPages, equals(2));
+      expect(report.pageElaAnalyses.length, equals(2));
+      expect(report.pageElaAnalyses[0].pageNumber, equals(1));
+      expect(report.pageElaAnalyses[1].pageNumber, equals(2));
+      expect(report.pageElaAnalyses[0].totalPageCount, equals(2));
+      expect(report.pageElaAnalyses[1].totalPageCount, equals(2));
+
+      // 3. Blackout targeting Page 2 specifically (pageIndex = 1)
+      final coords = {
+        'x': 30,
+        'y': 30,
+        'width': 150,
+        'height': 25,
+        'canvasWidth': 612.0,
+        'canvasHeight': 792.0,
+        'pageIndex': 1,
+      };
+
+      final redactedBytes = CryptoEngineWeb.applyPdfBlackout(
+        pdfBytes,
+        coords,
+        targetPageIndex: 1,
+      );
+
+      expect(redactedBytes, isNotEmpty);
+      expect(redactedBytes, isNot(equals(pdfBytes)));
+      final verifyDoc = PdfDocument(inputBytes: redactedBytes);
+      expect(verifyDoc.pages.count, equals(2));
+      verifyDoc.dispose();
+    });
+
     test('evaluateProvenance evaluates trust anchor, hash binding, and blind forensics', () async {
       final validManifest = {
         'issuer': 'Content Authenticity Initiative',

@@ -41,6 +41,7 @@ dependencies:
   record: ^7.1.1
   audioplayers: ^6.8.1
   image: ^4.9.2
+  printing: ^5.14.3
 
 dev_dependencies:
   flutter_test:
