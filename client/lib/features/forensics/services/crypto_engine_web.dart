@@ -1,5 +1,6 @@
 import 'dart:js_interop';
 import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 
 /// Binds to window.generateRedactionProof
 @JS('generateRedactionProof')
@@ -15,6 +16,26 @@ external JSPromise<JSAny?> _evaluateProvenance(JSArrayBuffer fileBuffer, JSObjec
 
 /// Dart wrapper for the Zero-Trust Cryptographic Web Engines
 class CryptoEngineWeb {
+  /// Destructively blackouts pixels in the selected rectangle and returns new PNG bytes
+  static Uint8List applyPixelBlackout(Uint8List originalBytes, Map<String, dynamic> coords) {
+    final decoded = img.decodeImage(originalBytes);
+    if (decoded == null) return originalBytes;
+
+    final int rx = (coords['x'] as num).toInt();
+    final int ry = (coords['y'] as num).toInt();
+    final int rw = (coords['width'] as num).toInt();
+    final int rh = (coords['height'] as num).toInt();
+
+    for (int y = ry; y < ry + rh; y++) {
+      for (int x = rx; x < rx + rw; x++) {
+        if (x >= 0 && x < decoded.width && y >= 0 && y < decoded.height) {
+          decoded.setPixelRgb(x, y, 0, 0, 0);
+        }
+      }
+    }
+
+    return Uint8List.fromList(img.encodePng(decoded));
+  }
   
   /// Generates a Zero-Knowledge Proof for the redacted file buffer.
   static Future<Map<String, dynamic>> generateRedactionProof(Uint8List fileBytes, Map<String, dynamic> coords) async {
