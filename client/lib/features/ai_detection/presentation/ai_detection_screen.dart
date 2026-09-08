@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:printing/printing.dart';
@@ -73,8 +75,19 @@ class _AiDetectionScreenState extends ConsumerState<AiDetectionScreen>
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        if (file.bytes != null) {
-          await _runAnalysis(file.bytes!, file.name, path: file.path);
+        Uint8List? bytes = file.bytes;
+        String? filePath;
+        // On Flutter Web, accessing file.path throws an UnsupportedError.
+        if (!kIsWeb) {
+          filePath = file.path;
+          if (bytes == null && filePath != null) {
+            bytes = await XFile(filePath).readAsBytes();
+          }
+        }
+        if (bytes != null && bytes.isNotEmpty) {
+          await _runAnalysis(bytes, file.name, path: filePath);
+        } else {
+          _showSnackbar('Could not load file data. Please try again.', isError: true);
         }
       }
     } catch (e) {
@@ -285,10 +298,11 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Enables high-speed multimodal neural verification with >95% benchmark accuracy. Keys can also be placed in .env as GEMINI_API_KEY.',
+              'Paste your Google Gemini API key below to unlock 95%+ verifiable neural detection accuracy.\n\nOption 1: Save it right here for this session.\nOption 2: Add GEMINI_API_KEY=your_key in client/.env for permanent loading.',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 color: CyberTheme.textMuted,
+                height: 1.4,
               ),
             ),
             const SizedBox(height: 14),
@@ -323,11 +337,15 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
           CyberButton(
             icon: Icons.check,
             onTap: () {
+              final key = controller.text.trim();
               setState(() {
-                _customApiKey = controller.text.trim();
+                _customApiKey = key;
               });
+              GeminiAiClient.setApiKey(key);
               Navigator.pop(ctx);
-              _showSnackbar('Gemini API key configured successfully.');
+              _showSnackbar(key.isNotEmpty
+                  ? 'Gemini 2.5 Flash API key saved! Hybrid engine active.'
+                  : 'Gemini API key cleared.');
             },
             child: const Text('Save Key'),
           ),
@@ -552,7 +570,13 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
         if (detail.files.isNotEmpty) {
           final file = detail.files.first;
           final bytes = await file.readAsBytes();
-          await _runAnalysis(bytes, file.name, path: file.path);
+          String? filePath;
+          if (!kIsWeb) {
+            try {
+              filePath = file.path;
+            } catch (_) {}
+          }
+          await _runAnalysis(bytes, file.name, path: filePath);
         }
       },
       child: AnimatedContainer(

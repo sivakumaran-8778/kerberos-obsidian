@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 
 /// Structured result returned from Gemini 2.5 Flash neural evaluation.
 class GeminiForensicResult {
@@ -41,10 +41,20 @@ class GeminiAiClient {
   static const String apiBase =
       'https://generativelanguage.googleapis.com/v1beta/models';
 
-  /// Resolves the API key: either an explicitly passed key, or from .env
+  static String? _inMemoryApiKey;
+
+  /// Sets or updates the in-memory API key (persists during the active session).
+  static void setApiKey(String key) {
+    _inMemoryApiKey = key.trim();
+  }
+
+  /// Resolves the API key: either an explicitly passed key, from in-memory cache, or from .env
   static String? getApiKey({String? overrideKey}) {
     if (overrideKey != null && overrideKey.trim().isNotEmpty) {
       return overrideKey.trim();
+    }
+    if (_inMemoryApiKey != null && _inMemoryApiKey!.isNotEmpty) {
+      return _inMemoryApiKey;
     }
     try {
       final envKey = dotenv.env['GEMINI_API_KEY'];
@@ -187,15 +197,8 @@ Output strictly valid JSON with no markdown fences and no extra text matching th
     required String model,
     required List<Map<String, dynamic>> contents,
   }) async {
-    HttpClient? client;
     try {
       final uri = Uri.parse('$apiBase/$model:generateContent?key=$apiKey');
-      client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 15);
-
-      final request = await client.postUrl(uri);
-      request.headers.set('Content-Type', 'application/json');
-
       final bodyPayload = jsonEncode({
         'contents': contents,
         'generationConfig': {
@@ -205,9 +208,13 @@ Output strictly valid JSON with no markdown fences and no extra text matching th
         }
       });
 
-      request.write(bodyPayload);
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: bodyPayload,
+      ).timeout(const Duration(seconds: 20));
+
+      final responseBody = response.body;
 
       if (response.statusCode != 200) {
         debugPrint(
@@ -281,8 +288,6 @@ Output strictly valid JSON with no markdown fences and no extra text matching th
     } catch (e, stack) {
       debugPrint('[GeminiAiClient] Exception: $e\n$stack');
       return GeminiForensicResult.error('Gemini connection failed: $e');
-    } finally {
-      client?.close();
     }
   }
 }
