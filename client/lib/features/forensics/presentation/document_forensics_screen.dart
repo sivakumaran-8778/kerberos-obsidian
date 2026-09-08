@@ -16,6 +16,7 @@ import '../models/document_forensic_models.dart';
 import '../services/document_forensic_service.dart';
 import '../services/crypto_engine.dart';
 import '../../verification/presentation/widgets/steganography_spatial_matrix.dart';
+import './widgets/zk_redact_selection_dialog.dart';
 
 class DocumentForensicsScreen extends ConsumerStatefulWidget {
   const DocumentForensicsScreen({super.key});
@@ -734,10 +735,20 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           onTap: () async {
+            if (report.fileBytes == null) return;
+            
+            // 1. Open the interactive overlay to let the user draw the exact blackout coordinates
+            final coords = await showDialog<Map<String, dynamic>>(
+              context: context,
+              builder: (context) => ZkRedactSelectionDialog(imageBytes: report.fileBytes!),
+            );
+
+            if (coords == null) return; // User cancelled
+
             try {
+              // 2. Feed the true mathematical coordinates to the zero-knowledge edge engine
               final result = await CryptoEngineWeb.generateRedactionProof(
-                  report.fileBytes ?? Uint8List(0), 
-                  {'x': 10, 'y': 10, 'width': 100, 'height': 100});
+                  report.fileBytes!, coords);
               
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
