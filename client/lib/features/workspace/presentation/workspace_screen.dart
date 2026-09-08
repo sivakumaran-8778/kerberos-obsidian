@@ -1371,6 +1371,53 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
                   const Spacer(),
                 ],
 
+                // Quick Download Client Capsule Button
+                Tooltip(
+                  message: 'Download Obsidian Client (Windows / Android)',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => DownloadCenterDialog.show(context),
+                      borderRadius: BorderRadius.circular(100),
+                      hoverColor: const Color(0x2538BDF8),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isDesktopNav ? 12 : 9,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0x1838BDF8),
+                          borderRadius: BorderRadius.circular(100),
+                          border: Border.all(color: const Color(0x4538BDF8), width: 1.0),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.download_for_offline_rounded,
+                              size: 16,
+                              color: Color(0xFF38BDF8),
+                            ),
+                            if (isDesktopNav) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                'Download',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF38BDF8),
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+
                 // Right: Combined Unified User Profile Capsule & Sign Out Menu
                 _buildNavbarProfileCapsule(profile),
               ],

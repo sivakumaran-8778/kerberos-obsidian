@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../shared/theme/cyber_theme.dart';
 import '../../services/platform_launcher_helper.dart';
@@ -138,6 +139,8 @@ class DownloadCenterDialog extends StatelessWidget {
                         'Deep Binary & Vector Thermal Forensic Pipeline',
                         'Local WebRTC Radar Signaling & Peer File Mesh',
                       ],
+                      downloadUrl: PlatformLauncherHelper.windowsDownloadUrl,
+                      installTip: 'Portable release: Extract ZIP and double-click to run.',
                       onDownload: () => PlatformLauncherHelper.launchUrl(
                         context,
                         PlatformLauncherHelper.windowsDownloadUrl,
@@ -161,6 +164,8 @@ class DownloadCenterDialog extends StatelessWidget {
                         'Air-Gapped P2P Radar Mesh via Direct WebRTC',
                         'AES-256 Encrypted Local Hive Storage Enclave',
                       ],
+                      downloadUrl: PlatformLauncherHelper.androidDownloadUrl,
+                      installTip: 'Direct APK: Open on device. Allow unknown apps if prompted.',
                       onDownload: () => PlatformLauncherHelper.launchUrl(
                         context,
                         PlatformLauncherHelper.androidDownloadUrl,
@@ -190,6 +195,8 @@ class DownloadCenterDialog extends StatelessWidget {
                           'Deep Binary & Vector Thermal Forensic Pipeline',
                           'Local WebRTC Radar Signaling & Peer File Mesh',
                         ],
+                        downloadUrl: PlatformLauncherHelper.windowsDownloadUrl,
+                        installTip: 'Portable release: Extract ZIP and double-click to run.',
                         onDownload: () => PlatformLauncherHelper.launchUrl(
                           context,
                           PlatformLauncherHelper.windowsDownloadUrl,
@@ -215,6 +222,8 @@ class DownloadCenterDialog extends StatelessWidget {
                           'Air-Gapped P2P Radar Mesh via Direct WebRTC',
                           'AES-256 Encrypted Local Hive Storage Enclave',
                         ],
+                        downloadUrl: PlatformLauncherHelper.androidDownloadUrl,
+                        installTip: 'Direct APK: Open on device. Allow unknown apps if prompted.',
                         onDownload: () => PlatformLauncherHelper.launchUrl(
                           context,
                           PlatformLauncherHelper.androidDownloadUrl,
@@ -296,6 +305,8 @@ class DownloadCenterDialog extends StatelessWidget {
     required String badgeText,
     required Color badgeColor,
     required List<String> features,
+    required String downloadUrl,
+    required String installTip,
     required VoidCallback onDownload,
   }) {
     return Container(
@@ -385,7 +396,7 @@ class DownloadCenterDialog extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
           // Action Download Button
           SizedBox(
@@ -394,7 +405,7 @@ class DownloadCenterDialog extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: iconColor,
                 foregroundColor: const Color(0xFF0A0712),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 13),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
               ),
@@ -408,6 +419,77 @@ class DownloadCenterDialog extends StatelessWidget {
                 ),
               ),
               onPressed: onDownload,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Copy Link & Quick Instructions
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF94A3B8),
+                side: const BorderSide(color: Color(0x35A855F7)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.copy_rounded, size: 13),
+              label: Text(
+                'Copy Direct Download Link',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: downloadUrl));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: const Color(0xFF0F172A),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: const BorderSide(color: Color(0xFF38BDF8)),
+                    ),
+                    duration: const Duration(seconds: 2),
+                    content: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: Color(0xFF38BDF8), size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Direct mirror link copied to clipboard!',
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Setup Hint
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0x0EFFFFFF),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 13, color: Color(0xFF94A3B8)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    installTip,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10.5,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
