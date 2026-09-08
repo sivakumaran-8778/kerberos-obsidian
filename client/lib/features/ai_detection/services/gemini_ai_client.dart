@@ -37,7 +37,7 @@ class GeminiForensicResult {
 
 /// Client for Google Gemini 2.5 Flash enterprise multimodal forensic inspection.
 class GeminiAiClient {
-  static const String defaultModel = 'gemini-2.5-flash';
+  static const String defaultModel = 'gemini-2.5-flash-lite';
   static const String apiBase =
       'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -248,97 +248,118 @@ Output strictly valid JSON with no markdown fences and no extra text matching th
     required String model,
     required List<Map<String, dynamic>> contents,
   }) async {
-    try {
-      final uri = Uri.parse('$apiBase/$model:generateContent?key=$apiKey');
-      final bodyPayload = jsonEncode({
-        'contents': contents,
-        'generationConfig': {
-          'temperature': 0.1,
-          'maxOutputTokens': 2048,
-          'responseMimeType': 'application/json',
+    final modelsToTry = [
+      model,
+      if (model != 'gemini-2.5-flash-lite') 'gemini-2.5-flash-lite',
+      if (model != 'gemini-3.6-flash') 'gemini-3.6-flash',
+      'gemini-flash-latest',
+    ];
+
+    String lastError = 'No models available';
+
+    for (final currentModel in modelsToTry) {
+      try {
+        final uri = Uri.parse('$apiBase/$currentModel:generateContent?key=$apiKey');
+        final bodyPayload = jsonEncode({
+          'contents': contents,
+          'generationConfig': {
+            'temperature': 0.1,
+            'maxOutputTokens': 2048,
+            'responseMimeType': 'application/json',
+          }
+        });
+
+        final response = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: bodyPayload,
+        ).timeout(const Duration(seconds: 20));
+
+        final responseBody = response.body;
+
+        if (response.statusCode != 200) {
+          debugPrint(
+              '[GeminiAiClient] $currentModel HTTP ${response.statusCode}: $responseBody');
+          lastError =
+              'Gemini API error ($currentModel HTTP ${response.statusCode}): $responseBody';
+          continue; // Try next fallback model
         }
-      });
 
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: bodyPayload,
-      ).timeout(const Duration(seconds: 20));
+        final parsed = jsonDecode(responseBody) as Map<String, dynamic>;
+        final candidates = parsed['candidates'] as List?;
+        if (candidates == null || candidates.isEmpty) {
+          lastError = 'No generation candidates returned from $currentModel';
+          continue;
+        }
 
-      final responseBody = response.body;
+        final content = candidates[0]['content'] as Map<String, dynamic>?;
+        final parts = content?['parts'] as List?;
+        if (parts == null || parts.isEmpty) {
+          lastError = 'Empty response content from $currentModel';
+          continue;
+        }
 
-      if (response.statusCode != 200) {
-        debugPrint(
-            '[GeminiAiClient] HTTP ${response.statusCode}: $responseBody');
-        return GeminiForensicResult.error(
-            'Gemini API error (HTTP ${response.statusCode}): $responseBody');
+        String rawText = '';
+        for (final part in parts) {
+          final t = part['text'] as String?;
+          if (t != null && t.trim().isNotEmpty) {
+            rawText = t;
+            break;
+          }
+        }
+        rawText = rawText.trim();
+        if (rawText.startsWith('```json')) {
+          rawText = rawText.substring(7);
+        } else if (rawText.startsWith('```')) {
+          rawText = rawText.substring(3);
+        }
+        if (rawText.endsWith('```')) {
+          rawText = rawText.substring(0, rawText.length - 3);
+        }
+        rawText = rawText.trim();
+
+        final jsonResult = jsonDecode(rawText) as Map<String, dynamic>;
+
+        final double synthProb =
+            (jsonResult['synthetic_probability'] as num?)?.toDouble() ?? 0.0;
+        final String modelLineage =
+            jsonResult['model_lineage'] as String? ?? 'Unknown Model';
+        final String summary = jsonResult['executive_summary'] as String? ??
+            'Analysis completed successfully.';
+        final List<String> indicators =
+            (jsonResult['forensic_indicators'] as List?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [];
+
+        final List<Map<String, dynamic>> sentences =
+            (jsonResult['sentence_evaluations'] as List?)
+                    ?.map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList() ??
+                [];
+
+        final reg = jsonResult['regulatory_compliance'] as Map<String, dynamic>?;
+        final String euReg =
+            reg?['eu_ai_act_article_52'] as String? ?? 'UNKNOWN';
+        final String usReg =
+            reg?['us_eo_14110_watermarking'] as String? ?? 'UNKNOWN';
+
+        return GeminiForensicResult(
+          isSuccess: true,
+          syntheticProbability: synthProb.clamp(0.0, 1.0),
+          modelLineage: modelLineage,
+          executiveSummary: summary,
+          forensicIndicators: indicators,
+          sentenceEvaluations: sentences,
+          euAiActCompliance: euReg,
+          usEo14110Compliance: usReg,
+        );
+      } catch (e, stack) {
+        debugPrint('[GeminiAiClient] Exception on $currentModel: $e\n$stack');
+        lastError = 'Gemini connection failed on $currentModel: $e';
       }
-
-      final parsed = jsonDecode(responseBody) as Map<String, dynamic>;
-      final candidates = parsed['candidates'] as List?;
-      if (candidates == null || candidates.isEmpty) {
-        return GeminiForensicResult.error(
-            'No generation candidates returned from Gemini');
-      }
-
-      final content = candidates[0]['content'] as Map<String, dynamic>?;
-      final parts = content?['parts'] as List?;
-      if (parts == null || parts.isEmpty) {
-        return GeminiForensicResult.error('Empty response content from Gemini');
-      }
-
-      String rawText = parts[0]['text'] as String? ?? '';
-      // Strip any accidental markdown formatting if present
-      rawText = rawText.trim();
-      if (rawText.startsWith('```json')) {
-        rawText = rawText.substring(7);
-      } else if (rawText.startsWith('```')) {
-        rawText = rawText.substring(3);
-      }
-      if (rawText.endsWith('```')) {
-        rawText = rawText.substring(0, rawText.length - 3);
-      }
-      rawText = rawText.trim();
-
-      final jsonResult = jsonDecode(rawText) as Map<String, dynamic>;
-
-      final double synthProb =
-          (jsonResult['synthetic_probability'] as num?)?.toDouble() ?? 0.0;
-      final String modelLineage =
-          jsonResult['model_lineage'] as String? ?? 'Unknown Model';
-      final String summary = jsonResult['executive_summary'] as String? ??
-          'Analysis completed successfully.';
-      final List<String> indicators =
-          (jsonResult['forensic_indicators'] as List?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              [];
-
-      final List<Map<String, dynamic>> sentences =
-          (jsonResult['sentence_evaluations'] as List?)
-                  ?.map((e) => Map<String, dynamic>.from(e as Map))
-                  .toList() ??
-              [];
-
-      final reg = jsonResult['regulatory_compliance'] as Map<String, dynamic>?;
-      final String euReg =
-          reg?['eu_ai_act_article_52'] as String? ?? 'UNKNOWN';
-      final String usReg =
-          reg?['us_eo_14110_watermarking'] as String? ?? 'UNKNOWN';
-
-      return GeminiForensicResult(
-        isSuccess: true,
-        syntheticProbability: synthProb.clamp(0.0, 1.0),
-        modelLineage: modelLineage,
-        executiveSummary: summary,
-        forensicIndicators: indicators,
-        sentenceEvaluations: sentences,
-        euAiActCompliance: euReg,
-        usEo14110Compliance: usReg,
-      );
-    } catch (e, stack) {
-      debugPrint('[GeminiAiClient] Exception: $e\n$stack');
-      return GeminiForensicResult.error('Gemini connection failed: $e');
     }
+
+    return GeminiForensicResult.error(lastError);
   }
 }

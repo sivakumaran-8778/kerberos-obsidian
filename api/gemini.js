@@ -23,12 +23,12 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       status: 'ok',
       configured: true,
-      model: 'gemini-2.5-flash'
+      model: 'gemini-2.5-flash-lite'
     });
   }
 
   try {
-    const { contents, generationConfig, model = 'gemini-2.5-flash' } = req.body || {};
+    const { contents, generationConfig, model = 'gemini-2.5-flash-lite' } = req.body || {};
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 

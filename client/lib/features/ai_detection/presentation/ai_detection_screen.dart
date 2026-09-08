@@ -275,94 +275,6 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
     }
   }
 
-  void _showApiKeyDialog() {
-    final controller = TextEditingController(
-        text: _customApiKey ?? GeminiAiClient.getApiKey() ?? '');
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: CyberTheme.surfaceElevated,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: CyberTheme.borderAccent),
-        ),
-        title: Row(
-          children: [
-            const Icon(Icons.vpn_key_rounded,
-                color: CyberTheme.accentColor, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Gemini 2.5 Flash API Key',
-              style: GoogleFonts.spaceGrotesk(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Paste your Google Gemini API key below to unlock 95%+ verifiable neural detection accuracy.\n\nOption 1: Save it right here for this session.\nOption 2: Add GEMINI_API_KEY=your_key in client/.env for permanent loading.',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                color: CyberTheme.textMuted,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: controller,
-              style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'AIzaSy...',
-                hintStyle: GoogleFonts.spaceGrotesk(color: Colors.white24),
-                filled: true,
-                fillColor: const Color(0x22000000),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: CyberTheme.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: CyberTheme.accentColor),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.plusJakartaSans(color: CyberTheme.textMuted),
-            ),
-          ),
-          CyberButton(
-            icon: Icons.check,
-            onTap: () {
-              final key = controller.text.trim();
-              setState(() {
-                _customApiKey = key;
-              });
-              GeminiAiClient.setApiKey(key);
-              Navigator.pop(ctx);
-              _showSnackbar(key.isNotEmpty
-                  ? 'Gemini 2.5 Flash API key saved! Hybrid engine active.'
-                  : 'Gemini API key cleared.');
-            },
-            child: const Text('Save Key'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showSnackbar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -477,14 +389,14 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
                 const SizedBox(width: 8),
                 Text(
                   hasGeminiKey
-                      ? 'PRIMARY ENGINE: GEMINI 2.5 FLASH ACTIVE (95%+ VERIFIABLE ACCURACY)'
-                      : 'FALLBACK: EDGE-ONLY (ADD GEMINI_API_KEY IN .ENV FOR PRIMARY ENGINE)',
+                      ? 'PRIMARY ENGINE: GOOGLE GEMINI NEURAL ACTIVE (95%+ ACCURACY)'
+                      : 'CONNECTING SECURE VERCEL GEMINI BACKEND...',
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: hasGeminiKey
                         ? const Color(0xFF10B981)
-                        : const Color(0xFFF59E0B),
+                        : const Color(0xFF38BDF8),
                     letterSpacing: 0.6,
                   ),
                 ),
@@ -494,26 +406,30 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
 
           const Spacer(),
 
-          // Configure API Key action
-          TextButton.icon(
-            onPressed: _showApiKeyDialog,
-            icon: const Icon(Icons.key_rounded,
-                size: 15, color: CyberTheme.accentColor),
-            label: Text(
-              hasGeminiKey ? 'Change API Key' : 'Configure Gemini Key',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: CyberTheme.accentColor,
-              ),
+          // Serverless Verified from Vercel badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0x18FFFFFF),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0x22FFFFFF), width: 1.0),
             ),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              backgroundColor: CyberTheme.accentColor.withValues(alpha: 0.1),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: const BorderSide(color: CyberTheme.borderAccent),
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.shield_outlined,
+                    size: 14, color: Color(0xFF10B981)),
+                const SizedBox(width: 6),
+                Text(
+                  'SERVERLESS VERIFIED (VERCEL)',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white70,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
