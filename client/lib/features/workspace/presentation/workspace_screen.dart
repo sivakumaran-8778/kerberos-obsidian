@@ -1936,13 +1936,13 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
         // Hero Action Buttons with Responsive Wrap
         Wrap(
           alignment: WrapAlignment.center,
-          spacing: 12,
-          runSpacing: 12,
+          spacing: 16,
+          runSpacing: 14,
           children: [
             CyberButton(
               variant: CyberButtonVariant.whitePill,
               height: isMobile ? 46 : 52,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 22 : 32),
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 26 : 36),
               icon: Icons.upload_file,
               enableHoverPop: true,
               onTap: () => _navigateToPage(1),
@@ -1958,55 +1958,7 @@ class _WorkspaceScreenState extends ConsumerState<WorkspaceScreen> with SingleTi
             CyberButton(
               variant: CyberButtonVariant.glassPill,
               height: isMobile ? 46 : 52,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
-              icon: Icons.verified_user_rounded,
-              enableHoverPop: true,
-              onTap: () => _navigateToPage(2),
-              child: Text(
-                'Verify & QA Audit',
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w700,
-                  fontSize: isMobile ? 13.5 : 15,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-            CyberButton(
-              variant: CyberButtonVariant.glassPill,
-              height: isMobile ? 46 : 52,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
-              icon: Icons.radar,
-              enableHoverPop: true,
-              onTap: () => _navigateToPage(3),
-              child: Text(
-                'Launch Radar',
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w700,
-                  fontSize: isMobile ? 13.5 : 15,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-            CyberButton(
-              variant: CyberButtonVariant.glassPill,
-              height: isMobile ? 46 : 52,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
-              icon: Icons.document_scanner_rounded,
-              enableHoverPop: true,
-              onTap: () => _navigateToPage(5),
-              child: Text(
-                'Doc Forensics',
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w700,
-                  fontSize: isMobile ? 13.5 : 15,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-            CyberButton(
-              variant: CyberButtonVariant.glassPill,
-              height: isMobile ? 46 : 52,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 18 : 24),
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 22 : 30),
               icon: Icons.download_for_offline_rounded,
               enableHoverPop: true,
               onTap: () => DownloadCenterDialog.show(context),

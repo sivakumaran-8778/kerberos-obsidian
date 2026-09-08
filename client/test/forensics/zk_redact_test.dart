@@ -1,7 +1,10 @@
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:kerberos_client/features/forensics/services/crypto_engine.dart';
+import 'package:kerberos_client/features/forensics/services/document_forensic_service.dart';
 
 void main() {
   group('Zero-Knowledge Selective Disclosure (zk-Redact) Tests', () {
@@ -107,6 +110,73 @@ void main() {
         ),
         throwsA(isA<Map<dynamic, dynamic>>()),
       );
+    });
+
+    test('applyPdfBlackout and multi-page ELA analysis on PDF files', () async {
+      // 1. Generate a valid 2-page PDF
+      final doc = PdfDocument();
+      final page1 = doc.pages.add();
+      page1.graphics.drawString(
+        'PAGE 1: SENSITIVE AADHAAR 9999-8888-7777 CONFIDENTIAL DATA',
+        PdfStandardFont(PdfFontFamily.helvetica, 12),
+        bounds: const Rect.fromLTWH(20, 20, 400, 20),
+      );
+      final page2 = doc.pages.add();
+      page2.graphics.drawString(
+        'PAGE 2: SECOND PAGE RECORD AUDIT DETAILS',
+        PdfStandardFont(PdfFontFamily.helvetica, 12),
+        bounds: const Rect.fromLTWH(20, 20, 400, 20),
+      );
+      final pdfBytes = Uint8List.fromList(doc.saveSync());
+      doc.dispose();
+
+      // 2. Perform forensic multi-page ELA audit
+      final report = DocumentForensicService.analyzeDocument(
+        bytes: pdfBytes,
+        fileName: 'multi_page_sample.pdf',
+      );
+      expect(report.totalPages, equals(2));
+      expect(report.pageElaAnalyses.length, equals(2));
+      expect(report.pageElaAnalyses[0].pageNumber, equals(1));
+      expect(report.pageElaAnalyses[1].pageNumber, equals(2));
+      expect(report.pageElaAnalyses[0].previewImageBytes, isNotNull);
+      expect(report.pageElaAnalyses[1].previewImageBytes, isNotNull);
+
+      // 3. Apply destructive blackout to Page 1
+      final coords = {
+        'x': 20,
+        'y': 20,
+        'width': 200,
+        'height': 20,
+        'canvasWidth': 612.0,
+        'canvasHeight': 792.0,
+        'pageIndex': 0,
+      };
+      final redactedPdfBytes = CryptoEngineWeb.applyPdfBlackout(pdfBytes, coords);
+      expect(redactedPdfBytes, isNotEmpty);
+      expect(redactedPdfBytes, isNot(equals(pdfBytes)));
+
+      // 4. Validate resulting buffer is a valid PDF
+      final redactedDoc = PdfDocument(inputBytes: redactedPdfBytes);
+      expect(redactedDoc.pages.count, equals(2));
+      redactedDoc.dispose();
+
+      // 5. Generate Groth16 zero-knowledge proof binding
+      final proofData = await CryptoEngineWeb.generateRedactionProof(pdfBytes, coords);
+      expect(proofData['redactedFileBuffer'], isNotNull);
+      expect(proofData['originalHash'], isNotEmpty);
+      expect(proofData['redactedHash'], isNotEmpty);
+      expect(proofData['originalHash'], isNot(equals(proofData['redactedHash'])));
+
+      // 6. Verify proof validates
+      final verification = await CryptoEngineWeb.verifyRedactionProof(
+        proofData['redactedFileBuffer'],
+        (proofData['zkProof'] as Map).cast<String, dynamic>(),
+        (proofData['publicSignals'] as List).map((e) => e.toString()).toList(),
+        {'protocol': 'groth16', 'curve': 'bn128'},
+        proofData['originalHash'],
+      );
+      expect(verification['status'], equals('OK'));
     });
 
     test('evaluateProvenance evaluates trust anchor, hash binding, and blind forensics', () async {

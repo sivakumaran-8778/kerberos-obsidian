@@ -1,6 +1,8 @@
 import 'dart:js_interop';
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 import 'package:image/image.dart' as img;
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 /// Binds to window.generateRedactionProof
 @JS('generateRedactionProof')
@@ -16,8 +18,64 @@ external JSPromise<JSAny?> _evaluateProvenance(JSArrayBuffer fileBuffer, JSObjec
 
 /// Dart wrapper for the Zero-Trust Cryptographic Web Engines
 class CryptoEngineWeb {
+  static bool _isPdf(Uint8List bytes) {
+    if (bytes.length < 5) return false;
+    return bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46;
+  }
+
+  /// Destructively blackouts target region in a PDF file buffer using native vector graphics
+  static Uint8List applyPdfBlackout(
+    Uint8List originalPdfBytes,
+    Map<String, dynamic> coords, {
+    int targetPageIndex = 0,
+    double canvasWidth = 612.0,
+    double canvasHeight = 792.0,
+  }) {
+    try {
+      final pdfDoc = PdfDocument(inputBytes: originalPdfBytes);
+      if (pdfDoc.pages.count > 0) {
+        final pageIdx = targetPageIndex.clamp(0, pdfDoc.pages.count - 1);
+        final page = pdfDoc.pages[pageIdx];
+
+        final double pw = page.size.width > 0 ? page.size.width : 612.0;
+        final double ph = page.size.height > 0 ? page.size.height : 792.0;
+
+        final double cw = canvasWidth > 0 ? canvasWidth : pw;
+        final double ch = canvasHeight > 0 ? canvasHeight : ph;
+
+        final double scaleX = pw / cw;
+        final double scaleY = ph / ch;
+
+        final double rx = ((coords['x'] as num?)?.toDouble() ?? 0.0) * scaleX;
+        final double ry = ((coords['y'] as num?)?.toDouble() ?? 0.0) * scaleY;
+        final double rw = ((coords['width'] as num?)?.toDouble() ?? 50.0) * scaleX;
+        final double rh = ((coords['height'] as num?)?.toDouble() ?? 20.0) * scaleY;
+
+        page.graphics.drawRectangle(
+          brush: PdfSolidBrush(PdfColor(0, 0, 0)),
+          bounds: Rect.fromLTWH(rx, ry, rw, rh),
+        );
+      }
+      final savedBytes = Uint8List.fromList(pdfDoc.saveSync());
+      pdfDoc.dispose();
+      return savedBytes;
+    } catch (_) {
+      return originalPdfBytes;
+    }
+  }
+
   /// Destructively blackouts pixels in the selected rectangle and returns new PNG bytes
   static Uint8List applyPixelBlackout(Uint8List originalBytes, Map<String, dynamic> coords) {
+    if (_isPdf(originalBytes)) {
+      return applyPdfBlackout(
+        originalBytes,
+        coords,
+        targetPageIndex: (coords['pageIndex'] as num?)?.toInt() ?? 0,
+        canvasWidth: (coords['canvasWidth'] as num?)?.toDouble() ?? 612.0,
+        canvasHeight: (coords['canvasHeight'] as num?)?.toDouble() ?? 792.0,
+      );
+    }
+
     final decoded = img.decodeImage(originalBytes);
     if (decoded == null) return originalBytes;
 

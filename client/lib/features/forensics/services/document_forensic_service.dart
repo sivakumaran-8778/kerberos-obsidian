@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
@@ -9,6 +10,19 @@ import '../../ledger/models/provenance_record.dart';
 import '../models/document_forensic_models.dart';
 
 class DocumentForensicService {
+  /// Generates a fast raster preview and ELA tensor for a specific PDF or image page
+  static DocumentElaAnalysis computeQuickPreview(Uint8List bytes, {int targetPageIndex = 0, int totalPageCount = 1}) {
+    if (_isPdfBytes(bytes)) {
+      return _computePdfDocumentEla(
+        bytes,
+        isTampered: false,
+        targetPageIndex: targetPageIndex,
+        totalPageCount: totalPageCount,
+      );
+    }
+    return _computeElaTensor(bytes, isTampered: false);
+  }
+
   /// Analyzes any document or image blindly (without requiring prior registration)
   /// and correlates with ledger anchors if available to produce a complete forensic audit.
   static DocumentForensicReport analyzeDocument({
@@ -175,6 +189,7 @@ class DocumentForensicService {
         isSocialMediaCompressed: subAnalysis.isSocialMediaCompressed,
         digitalSignatureAlgorithm: subAnalysis.digitalSignatureAlgorithm,
         elaAnalysis: subAnalysis.elaAnalysis,
+        pageElaAnalyses: subAnalysis.pageElaAnalyses,
         qrValidation: subAnalysis.qrValidation,
         revisionDiff: subAnalysis.revisionDiff,
         audioForensics: subAnalysis.audioForensics,
@@ -228,6 +243,7 @@ class DocumentForensicService {
       isSocialMediaCompressed: forensicResult.isSocialMediaCompressed,
       digitalSignatureAlgorithm: forensicResult.digitalSignatureAlgorithm,
       elaAnalysis: forensicResult.elaAnalysis,
+      pageElaAnalyses: forensicResult.pageElaAnalyses,
       qrValidation: forensicResult.qrValidation,
       revisionDiff: forensicResult.revisionDiff,
       audioForensics: forensicResult.audioForensics,
@@ -517,17 +533,34 @@ class DocumentForensicService {
       isTampered = true;
     }
 
-    // N. FEATURE 1: Error Level Analysis (ELA) Matrix
-    final ela = _computeElaTensor(
-      bytes,
-      isTampered: isTampered,
-      editorSignatures: editingTools.toList(),
-      revisionDiff: revisionDiff,
-      revisionCount: revAnalysis.trueGenerationCount,
-      firstRevisionEnd: revAnalysis.firstRevisionEnd,
-      hasTrailingPayload: revAnalysis.hasTrailingPayload,
-      trailingPayloadBytes: revAnalysis.trailingBytes,
-    );
+    // N. FEATURE 1: Error Level Analysis (ELA) Matrix across all pages
+    int totalPageCount = 1;
+    try {
+      final pDoc = PdfDocument(inputBytes: bytes);
+      totalPageCount = math.max(1, pDoc.pages.count);
+      pDoc.dispose();
+    } catch (_) {}
+
+    final List<DocumentElaAnalysis> pageElaAnalyses = [];
+    final safePageLimit = math.min(totalPageCount, 25);
+    for (int p = 0; p < safePageLimit; p++) {
+      final pageEla = _computePdfDocumentEla(
+        bytes,
+        isTampered: isTampered,
+        editorSignatures: editingTools.toList(),
+        revisionDiff: revisionDiff,
+        revisionCount: revAnalysis.trueGenerationCount,
+        firstRevisionEnd: revAnalysis.firstRevisionEnd,
+        hasTrailingPayload: revAnalysis.hasTrailingPayload,
+        trailingPayloadBytes: revAnalysis.trailingBytes,
+        targetPageIndex: p,
+        totalPageCount: totalPageCount,
+      );
+      pageElaAnalyses.add(pageEla);
+    }
+    final ela = pageElaAnalyses.isNotEmpty
+        ? pageElaAnalyses.first
+        : _computeElaTensor(bytes, isTampered: isTampered);
 
     // Build Chronological History (Exact per-generation records)
     final rev1 = revAnalysis.revisions.isNotEmpty ? revAnalysis.revisions.first : null;
@@ -612,6 +645,7 @@ class DocumentForensicService {
       isSocialMediaCompressed: false,
       digitalSignatureAlgorithm: digitalSignatureAlgorithm,
       elaAnalysis: ela,
+      pageElaAnalyses: pageElaAnalyses,
       qrValidation: qrValidation,
       revisionDiff: revisionDiff,
       fileCategory: ForensicFileCategory.document,
@@ -1683,6 +1717,8 @@ class DocumentForensicService {
     int firstRevisionEnd = 0,
     bool hasTrailingPayload = false,
     int trailingPayloadBytes = 0,
+    int targetPageIndex = 0,
+    int totalPageCount = 1,
   }) {
     if (bytes.isEmpty) {
       return const DocumentElaAnalysis(
@@ -1705,6 +1741,8 @@ class DocumentForensicService {
         firstRevisionEnd: firstRevisionEnd,
         hasTrailingPayload: hasTrailingPayload,
         trailingPayloadBytes: trailingPayloadBytes,
+        targetPageIndex: targetPageIndex,
+        totalPageCount: totalPageCount,
       );
     }
 
@@ -1761,23 +1799,38 @@ class DocumentForensicService {
     int firstRevisionEnd = 0,
     bool hasTrailingPayload = false,
     int trailingPayloadBytes = 0,
+    int targetPageIndex = 0,
+    int totalPageCount = 1,
   }) {
     final rawAscii = _bytesToAsciiString(bytes);
 
     // 1. Page Dimensions & Text Extraction via Syncfusion
     double pageWidth = 612.0;
     double pageHeight = 792.0;
+    int docPages = 1;
     final List<TextLine> extractedTextLines = [];
+    final List<Rect> pageAnnotationBounds = [];
     try {
       final pdfDoc = PdfDocument(inputBytes: bytes);
+      docPages = math.max(1, pdfDoc.pages.count);
+      final safePageIdx = targetPageIndex.clamp(0, docPages - 1);
       if (pdfDoc.pages.count > 0) {
-        final page0 = pdfDoc.pages[0];
-        if (page0.size.width > 0 && page0.size.height > 0) {
-          pageWidth = page0.size.width;
-          pageHeight = page0.size.height;
+        final targetPage = pdfDoc.pages[safePageIdx];
+        if (targetPage.size.width > 0 && targetPage.size.height > 0) {
+          pageWidth = targetPage.size.width;
+          pageHeight = targetPage.size.height;
         }
         final extractor = PdfTextExtractor(pdfDoc);
-        extractedTextLines.addAll(extractor.extractTextLines(startPageIndex: 0, endPageIndex: 0));
+        extractedTextLines.addAll(extractor.extractTextLines(startPageIndex: safePageIdx, endPageIndex: safePageIdx));
+
+        // Extract native annotations belonging to this specific page
+        for (int a = 0; a < targetPage.annotations.count; a++) {
+          final ann = targetPage.annotations[a];
+          final b = ann.bounds;
+          if (b.width > 0 && b.height > 0) {
+            pageAnnotationBounds.add(b);
+          }
+        }
       }
       pdfDoc.dispose();
     } catch (_) {}
@@ -2367,6 +2420,8 @@ class DocumentForensicService {
       overlappedCellIndices: overlappedCells.toList()..sort(),
       hiddenCellIndices: hiddenCells.toList()..sort(),
       hotspotDescriptions: descriptions.take(8).toList(),
+      pageNumber: targetPageIndex + 1,
+      totalPageCount: totalPageCount > 0 ? totalPageCount : docPages,
     );
   }
 
@@ -3369,6 +3424,7 @@ class _InternalForensicAnalysis {
   final String? digitalSignatureAlgorithm;
 
   final DocumentElaAnalysis? elaAnalysis;
+  final List<DocumentElaAnalysis> pageElaAnalyses;
   final DocumentQrValidation? qrValidation;
   final PdfRevisionDiff? revisionDiff;
   final ForensicFileCategory fileCategory;
@@ -3395,6 +3451,7 @@ class _InternalForensicAnalysis {
     this.isSocialMediaCompressed = false,
     this.digitalSignatureAlgorithm,
     this.elaAnalysis,
+    this.pageElaAnalyses = const [],
     this.qrValidation,
     this.revisionDiff,
     this.fileCategory = ForensicFileCategory.document,

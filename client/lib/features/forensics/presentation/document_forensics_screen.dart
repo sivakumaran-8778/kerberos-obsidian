@@ -38,9 +38,33 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   int _elaLayerFilter = 0; // 0: All, 1: Changes, 2: Overlapped, 3: Hidden
   double _elaOverlayOpacity = 0.65;
   Uint8List? _redactedImageBytes;
+  Uint8List? _redactedFileBytes;
   Map<String, dynamic>? _zkProofData;
   Map<String, dynamic>? _redactionCoords;
   bool _isProvingZk = false;
+  int _selectedForensicPageIndex = 0;
+
+  DocumentElaAnalysis get _activeElaAnalysis {
+    if (_report == null) {
+      return const DocumentElaAnalysis(
+        heatmapTensor: [],
+        peakErrorRate: 0,
+        anomalyCoordinates: 'N/A',
+        hasSplicingAnomaly: false,
+      );
+    }
+    if (_report!.pageElaAnalyses.isNotEmpty &&
+        _selectedForensicPageIndex < _report!.pageElaAnalyses.length) {
+      return _report!.pageElaAnalyses[_selectedForensicPageIndex];
+    }
+    return _report!.elaAnalysis ??
+        const DocumentElaAnalysis(
+          heatmapTensor: [],
+          peakErrorRate: 0,
+          anomalyCoordinates: 'N/A',
+          hasSplicingAnomaly: false,
+        );
+  }
 
   @override
   void initState() {
@@ -115,8 +139,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
         setState(() {
           _report = report;
           _isAnalyzing = false;
+          _selectedForensicPageIndex = 0;
           _hoveredElaIndex = null;
           _redactedImageBytes = null;
+          _redactedFileBytes = null;
           _zkProofData = null;
           _redactionCoords = null;
           _isProvingZk = false;
@@ -137,8 +163,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           setState(() {
             _report = report;
             _isAnalyzing = false;
+            _selectedForensicPageIndex = 0;
             _hoveredElaIndex = null;
             _redactedImageBytes = null;
+            _redactedFileBytes = null;
             _zkProofData = null;
             _redactionCoords = null;
             _isProvingZk = false;
@@ -228,7 +256,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                 _buildDocumentHistoryTimeline(),
                 if (_report!.elaAnalysis != null) ...[
                   const SizedBox(height: 24),
-                  _buildElaHeatmapSection(_report!.elaAnalysis!),
+                  _buildElaHeatmapSection(_activeElaAnalysis),
                 ],
                 const SizedBox(height: 24),
                 if (_report!.anomalies.isNotEmpty) ...[
@@ -759,12 +787,19 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           onTap: () async {
-            final sourceBytes = _redactedImageBytes ?? report.fileBytes;
+            final isPdf = report.isPdf;
+            final currentEla = _activeElaAnalysis;
+            final sourceFileBytes = _redactedFileBytes ?? report.fileBytes;
             
             // 1. Open the interactive overlay to let the user draw the exact blackout coordinates
             final coords = await showDialog<Map<String, dynamic>>(
               context: context,
-              builder: (context) => ZkRedactSelectionDialog(imageBytes: sourceBytes),
+              builder: (context) => ZkRedactSelectionDialog(
+                imageBytes: sourceFileBytes,
+                previewBytes: currentEla.previewImageBytes,
+                pageIndex: _selectedForensicPageIndex,
+                totalPages: report.totalPages,
+              ),
             );
 
             if (coords == null) return; // User cancelled
@@ -774,28 +809,56 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
             });
 
             try {
-              // 2. Destructively black out pixels in the bitstream
-              final newRedactedBytes = CryptoEngineWeb.applyPixelBlackout(sourceBytes, coords);
+              Uint8List newRedactedFileBytes;
+              Uint8List newRedactedImageBytes;
 
-              // 3. Feed coordinates and bytes to the zero-knowledge edge engine
+              if (isPdf) {
+                // 2. Destructively black out vector/stream region in PDF bitstream
+                newRedactedFileBytes = CryptoEngineWeb.applyPdfBlackout(
+                  sourceFileBytes,
+                  coords,
+                  targetPageIndex: _selectedForensicPageIndex,
+                  canvasWidth: (coords['canvasWidth'] as num?)?.toDouble() ?? (currentEla.imageWidth > 0 ? currentEla.imageWidth.toDouble() : 612.0),
+                  canvasHeight: (coords['canvasHeight'] as num?)?.toDouble() ?? (currentEla.imageHeight > 0 ? currentEla.imageHeight.toDouble() : 792.0),
+                );
+
+                // 3. Re-render the fast raster preview showing the blacked-out page
+                final previewEla = DocumentForensicService.computeQuickPreview(
+                  newRedactedFileBytes,
+                  targetPageIndex: _selectedForensicPageIndex,
+                  totalPageCount: report.totalPages,
+                );
+                newRedactedImageBytes = previewEla.previewImageBytes ?? previewEla.elaImageBytes ?? currentEla.previewImageBytes!;
+              } else {
+                newRedactedFileBytes = CryptoEngineWeb.applyPixelBlackout(sourceFileBytes, coords);
+                newRedactedImageBytes = newRedactedFileBytes;
+              }
+
+              // 4. Feed coordinates and bytes to the zero-knowledge edge engine
               final result = await CryptoEngineWeb.generateRedactionProof(
-                  report.fileBytes, coords);
+                report.fileBytes,
+                coords,
+              );
+              result['redactedFileBuffer'] = newRedactedFileBytes;
               
               if (mounted) {
                 setState(() {
-                  _redactedImageBytes = newRedactedBytes;
+                  _redactedFileBytes = newRedactedFileBytes;
+                  _redactedImageBytes = newRedactedImageBytes;
                   _zkProofData = result;
                   _redactionCoords = coords;
                   _isProvingZk = false;
                 });
 
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     backgroundColor: CyberTheme.emerald,
                     behavior: SnackBarBehavior.floating,
                     content: Text(
-                      'ZK-REDACT APPLIED: Sensitive pixels obliterated & Groth16 proof bound.',
-                      style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      isPdf
+                          ? 'ZK-REDACT APPLIED: PDF Page ${_selectedForensicPageIndex + 1} redacted & Groth16 proof bound.'
+                          : 'ZK-REDACT APPLIED: Sensitive pixels obliterated & Groth16 proof bound.',
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                   ),
                 );
@@ -1004,24 +1067,30 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   }
 
   Future<void> _downloadRedactedImage() async {
-    if (_redactedImageBytes == null || _report == null) return;
+    if ((_redactedFileBytes == null && _redactedImageBytes == null) || _report == null) return;
 
     try {
       final baseName = _report!.fileName.contains('.')
           ? _report!.fileName.substring(0, _report!.fileName.lastIndexOf('.'))
           : _report!.fileName;
 
+      final isPdf = _report!.isPdf;
+      final fileName = isPdf ? '${baseName}_redacted.pdf' : '${baseName}_redacted.png';
+      final bytes = isPdf
+          ? (_redactedFileBytes ?? _redactedImageBytes!)
+          : (_redactedImageBytes ?? _redactedFileBytes!);
+
       await FileDownloadHelper.downloadFile(
         context: context,
-        fileName: '${baseName}_redacted.png',
-        bytes: _redactedImageBytes!,
+        fileName: fileName,
+        bytes: bytes,
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: CyberTheme.coral,
-            content: Text('Failed to export redacted image: $e'),
+            content: Text('Failed to export redacted document: $e'),
           ),
         );
       }
@@ -1029,7 +1098,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
   }
 
   Future<void> _testVerifyProof() async {
-    if (_zkProofData == null || _redactedImageBytes == null || _report == null) return;
+    if (_zkProofData == null || (_redactedFileBytes == null && _redactedImageBytes == null) || _report == null) return;
 
     try {
       final zkProofRaw = _zkProofData!['zkProof'];
@@ -1043,9 +1112,10 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           : <String>[_zkProofData!['originalHash']?.toString() ?? _report!.sha256Hash];
 
       final expectedHash = _zkProofData!['originalHash']?.toString() ?? _report!.sha256Hash;
+      final verifiedBuffer = _redactedFileBytes ?? _redactedImageBytes!;
 
       final verification = await CryptoEngineWeb.verifyRedactionProof(
-        _redactedImageBytes!,
+        verifiedBuffer,
         zkProof,
         publicSignals,
         {'protocol': 'groth16', 'curve': 'bn128'},
@@ -1343,10 +1413,18 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.image_outlined, size: 14, color: Colors.white),
+                            Icon(
+                              _report?.isPdf == true
+                                  ? Icons.picture_as_pdf_outlined
+                                  : Icons.image_outlined,
+                              size: 14,
+                              color: Colors.white,
+                            ),
                             const SizedBox(width: 6),
                             Text(
-                              'DOWNLOAD REDACTED IMAGE',
+                              _report?.isPdf == true
+                                  ? 'DOWNLOAD REDACTED PDF'
+                                  : 'DOWNLOAD REDACTED IMAGE',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -1382,6 +1460,7 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
                         onTap: () {
                           setState(() {
                             _redactedImageBytes = null;
+                            _redactedFileBytes = null;
                             _zkProofData = null;
                             _redactionCoords = null;
                           });
@@ -2115,6 +2194,12 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
           ),
           const SizedBox(height: 16),
 
+          // Multi-Page PDF Heatmap Navigator
+          if (_report != null && _report!.totalPages > 1) ...[
+            _buildPageNavigatorBar(_report!.totalPages),
+            const SizedBox(height: 16),
+          ],
+
           // Multi-View Forensic Mode Bar
           LayoutBuilder(
             builder: (context, barConstraints) {
@@ -2285,6 +2370,201 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     );
   }
 
+  Widget _buildPageNavigatorBar(int totalPages) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF130E20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF38BDF8).withValues(alpha: 0.08),
+            blurRadius: 12,
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 640;
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.auto_stories_rounded,
+                      size: 16,
+                      color: Color(0xFF38BDF8),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'MULTI-PAGE PDF HEATMAP INSPECTION',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF38BDF8),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      Text(
+                        'Page ${_selectedForensicPageIndex + 1} of $totalPages',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Prev Button
+                  CyberButton(
+                    variant: CyberButtonVariant.glass,
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    onTap: _selectedForensicPageIndex > 0
+                        ? () {
+                            setState(() {
+                              _selectedForensicPageIndex--;
+                              _hoveredElaIndex = null;
+                            });
+                          }
+                        : null,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.chevron_left_rounded,
+                          size: 16,
+                          color: _selectedForensicPageIndex > 0 ? Colors.white : Colors.white24,
+                        ),
+                        if (!isNarrow) ...[
+                          const SizedBox(width: 2),
+                          Text(
+                            'Prev',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _selectedForensicPageIndex > 0 ? Colors.white : Colors.white24,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // Page number chips
+                  if (!isNarrow)
+                    ...List.generate(totalPages > 8 ? 8 : totalPages, (i) {
+                      final isSelected = i == _selectedForensicPageIndex;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedForensicPageIndex = i;
+                              _hoveredElaIndex = null;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF38BDF8) : Colors.white12,
+                              ),
+                            ),
+                            child: Text(
+                              '${i + 1}',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: isSelected ? Colors.black : Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  if (totalPages > 8 && !isNarrow) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        '...',
+                        style: GoogleFonts.jetBrainsMono(
+                          color: Colors.white38,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 6),
+                  // Next Button
+                  CyberButton(
+                    variant: CyberButtonVariant.glass,
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    onTap: _selectedForensicPageIndex < totalPages - 1
+                        ? () {
+                            setState(() {
+                              _selectedForensicPageIndex++;
+                              _hoveredElaIndex = null;
+                            });
+                          }
+                        : null,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isNarrow) ...[
+                          Text(
+                            'Next',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _selectedForensicPageIndex < totalPages - 1 ? Colors.white : Colors.white24,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                        ],
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 16,
+                          color: _selectedForensicPageIndex < totalPages - 1 ? Colors.white : Colors.white24,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildElaVisualCanvas(DocumentElaAnalysis ela, double availableWidth) {
     // Mode 0 is the 16x16 Spatial Residual Matrix from user reference image
     if (_elaViewMode == 0 || ela.previewImageBytes == null) {
@@ -2301,7 +2581,11 @@ class _DocumentForensicsScreenState extends ConsumerState<DocumentForensicsScree
     final hoveredRow = hoveredIdx != null ? (hoveredIdx ~/ 16) : null;
     final hoveredCol = hoveredIdx != null ? (hoveredIdx % 16) : null;
 
-    final activeImageBytes = _redactedImageBytes ?? ela.previewImageBytes!;
+    final activeImageBytes = (_redactionCoords != null &&
+            _redactionCoords!['pageIndex'] == _selectedForensicPageIndex &&
+            _redactedImageBytes != null)
+        ? _redactedImageBytes!
+        : ela.previewImageBytes!;
 
     Widget imageStack;
     if (_elaViewMode == 1) {

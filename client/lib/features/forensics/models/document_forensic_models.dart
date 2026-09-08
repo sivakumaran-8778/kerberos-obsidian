@@ -146,6 +146,8 @@ class DocumentElaAnalysis {
   final List<int> overlappedCellIndices;
   final List<int> hiddenCellIndices;
   final List<String> hotspotDescriptions;
+  final int pageNumber;
+  final int totalPageCount;
 
   const DocumentElaAnalysis({
     required this.heatmapTensor,
@@ -165,6 +167,8 @@ class DocumentElaAnalysis {
     this.overlappedCellIndices = const [],
     this.hiddenCellIndices = const [],
     this.hotspotDescriptions = const [],
+    this.pageNumber = 1,
+    this.totalPageCount = 1,
   });
 }
 
@@ -376,6 +380,7 @@ class DocumentForensicReport {
 
   // Multi-Media Specialized Analysis
   final DocumentElaAnalysis? elaAnalysis;
+  final List<DocumentElaAnalysis> pageElaAnalyses;
   final DocumentQrValidation? qrValidation;
   final PdfRevisionDiff? revisionDiff;
   final AudioForensicsDetails? audioForensics;
@@ -408,12 +413,16 @@ class DocumentForensicReport {
     this.isSocialMediaCompressed = false,
     this.digitalSignatureAlgorithm,
     this.elaAnalysis,
+    this.pageElaAnalyses = const [],
     this.qrValidation,
     this.revisionDiff,
     this.audioForensics,
     this.videoForensics,
     this.textForensics,
   });
+
+  int get totalPages =>
+      pageElaAnalyses.isNotEmpty ? pageElaAnalyses.length : (elaAnalysis != null ? 1 : 0);
 
   bool get isTampered =>
       verdict == DocumentForensicVerdict.tamperedEdited ||

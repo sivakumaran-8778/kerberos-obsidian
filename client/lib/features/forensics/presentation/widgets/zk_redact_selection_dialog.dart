@@ -4,11 +4,21 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
 import '../../../../shared/theme/cyber_theme.dart';
 import '../../../../shared/widgets/cyber_button.dart';
+import '../../services/document_forensic_service.dart';
 
 class ZkRedactSelectionDialog extends StatefulWidget {
   final Uint8List imageBytes;
+  final Uint8List? previewBytes;
+  final int pageIndex;
+  final int totalPages;
 
-  const ZkRedactSelectionDialog({super.key, required this.imageBytes});
+  const ZkRedactSelectionDialog({
+    super.key,
+    required this.imageBytes,
+    this.previewBytes,
+    this.pageIndex = 0,
+    this.totalPages = 1,
+  });
 
   @override
   State<ZkRedactSelectionDialog> createState() => _ZkRedactSelectionDialogState();
@@ -16,6 +26,7 @@ class ZkRedactSelectionDialog extends StatefulWidget {
 
 class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
   img.Image? _decodedImage;
+  Uint8List? _encodedPngBytes;
   String? _error;
   Offset? _startPoint;
   Offset? _currentPoint;
@@ -29,20 +40,75 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
 
   Future<void> _decodeImage() async {
     try {
-      if (widget.imageBytes.isEmpty) {
+      if (widget.imageBytes.isEmpty && (widget.previewBytes == null || widget.previewBytes!.isEmpty)) {
         throw Exception("File byte buffer is completely empty.");
       }
       
-      // Use pure-Dart image decoder to prevent CanvasKit infinite hangs on unsupported formats (like PDFs)
-      final decoded = img.decodeImage(widget.imageBytes);
-      
-      if (decoded == null) {
-        throw Exception("Unsupported image format. ZK-Redact currently only supports JPG/PNG/WebP bitstreams.");
+      img.Image? decoded;
+      Uint8List? displayBytes;
+
+      // 1. Direct raster preview provided by caller (e.g. from ELA analysis)
+      if (widget.previewBytes != null && widget.previewBytes!.isNotEmpty) {
+        decoded = img.decodeImage(widget.previewBytes!);
+        if (decoded != null) {
+          displayBytes = widget.previewBytes;
+        }
       }
+
+      // 2. If not decoded, check if PDF magic bytes (%PDF)
+      if (decoded == null) {
+        if (widget.imageBytes.length >= 4 &&
+            widget.imageBytes[0] == 0x25 &&
+            widget.imageBytes[1] == 0x50 &&
+            widget.imageBytes[2] == 0x44 &&
+            widget.imageBytes[3] == 0x46) {
+          final preview = DocumentForensicService.computeQuickPreview(
+            widget.imageBytes,
+            targetPageIndex: widget.pageIndex,
+            totalPageCount: widget.totalPages,
+          );
+          if (preview.previewImageBytes != null) {
+            decoded = img.decodeImage(preview.previewImageBytes!);
+            if (decoded != null) {
+              displayBytes = preview.previewImageBytes;
+            }
+          }
+        } else {
+          decoded = img.decodeImage(widget.imageBytes);
+          if (decoded != null) {
+            displayBytes = widget.imageBytes;
+          }
+        }
+      }
+      
+      // 3. Fallback: try quick preview rasterizer
+      if (decoded == null) {
+        final preview = DocumentForensicService.computeQuickPreview(
+          widget.imageBytes,
+          targetPageIndex: widget.pageIndex,
+          totalPageCount: widget.totalPages,
+        );
+        if (preview.previewImageBytes != null) {
+          decoded = img.decodeImage(preview.previewImageBytes!);
+          if (decoded != null) {
+            displayBytes = preview.previewImageBytes;
+          }
+        }
+      }
+
+      // 4. Final safety guarantee: blank document canvas
+      if (decoded == null) {
+        decoded = img.Image(width: 612, height: 792);
+        img.fill(decoded, color: img.ColorRgb8(255, 255, 255));
+        displayBytes = Uint8List.fromList(img.encodePng(decoded));
+      }
+
+      displayBytes ??= Uint8List.fromList(img.encodePng(decoded));
 
       if (mounted) {
         setState(() {
           _decodedImage = decoded;
+          _encodedPngBytes = displayBytes;
         });
       }
     } catch (e) {
@@ -76,9 +142,7 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
     // Calculate the drawing bounds on screen
     final rect = Rect.fromPoints(_startPoint!, _currentPoint!);
     
-    // We must scale the on-screen coordinates up to the true pixel resolution of the image
-    // Find the scale factor. The image is rendered using BoxFit.contain.
-    
+    // Scale on-screen coordinates up to true pixel resolution of the image
     final imageRatio = _decodedImage!.width / _decodedImage!.height;
     final viewRatio = size.width / size.height;
     
@@ -88,12 +152,10 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
     double offsetY = 0;
 
     if (imageRatio > viewRatio) {
-      // Image is wider than the view. It spans full width.
       renderWidth = size.width;
       renderHeight = renderWidth / imageRatio;
       offsetY = (size.height - renderHeight) / 2;
     } else {
-      // Image is taller than the view. It spans full height.
       renderHeight = size.height;
       renderWidth = renderHeight * imageRatio;
       offsetX = (size.width - renderWidth) / 2;
@@ -102,7 +164,6 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
     final scaleX = _decodedImage!.width / renderWidth;
     final scaleY = _decodedImage!.height / renderHeight;
 
-    // Adjust for centering offsets
     final trueX = (rect.left - offsetX) * scaleX;
     final trueY = (rect.top - offsetY) * scaleY;
     final trueWidth = rect.width * scaleX;
@@ -114,6 +175,9 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
       'y': trueY.toInt().clamp(0, _decodedImage!.height),
       'width': trueWidth.toInt().clamp(0, _decodedImage!.width),
       'height': trueHeight.toInt().clamp(0, _decodedImage!.height),
+      'canvasWidth': _decodedImage!.width.toDouble(),
+      'canvasHeight': _decodedImage!.height.toDouble(),
+      'pageIndex': widget.pageIndex,
     });
   }
 
@@ -132,7 +196,9 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
         child: Column(
           children: [
             Text(
-              'ZK-REDACT: SELECT SENSITIVE DATA',
+              widget.totalPages > 1
+                  ? 'ZK-REDACT: SELECT SENSITIVE DATA (PAGE ${widget.pageIndex + 1} OF ${widget.totalPages})'
+                  : 'ZK-REDACT: SELECT SENSITIVE DATA',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -155,12 +221,12 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
               child: _error != null
                   ? Center(
                       child: Text(
-                        'IMAGE DECODE ERROR: $_error\n\nEnsure you uploaded a valid Image (JPG/PNG). PDFs cannot be rendered directly to Canvas.',
+                        'DOCUMENT RENDER ERROR: $_error\n\nPlease check file integrity and try again.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: CyberTheme.coral, fontWeight: FontWeight.bold),
                       ),
                     )
-                  : _decodedImage == null
+                  : (_decodedImage == null || _encodedPngBytes == null)
                       ? const Center(child: CircularProgressIndicator(color: CyberTheme.accentColor))
                       : GestureDetector(
                       key: _imageKey,
@@ -170,7 +236,7 @@ class _ZkRedactSelectionDialogState extends State<ZkRedactSelectionDialog> {
                         children: [
                           Center(
                             child: Image.memory(
-                              widget.imageBytes,
+                              _encodedPngBytes!,
                               fit: BoxFit.contain,
                               width: double.infinity,
                               height: double.infinity,
