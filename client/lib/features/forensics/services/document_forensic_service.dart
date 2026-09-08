@@ -1851,7 +1851,7 @@ class DocumentForensicService {
       if (firstRevisionEnd > 0 && firstRevisionEnd < rawAscii.length) {
         final appendedSlice = rawAscii.substring(firstRevisionEnd);
         final appTmMatches = RegExp(r'([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+Tm').allMatches(appendedSlice);
-        for (final m in appTmMatches.take(4)) {
+        for (final m in appTmMatches.take(40)) {
           final tx = double.tryParse(m.group(5)!) ?? 0.0;
           final ty = double.tryParse(m.group(6)!) ?? 0.0;
           markArea(tx, ty, 75.0, 20.0);
@@ -1861,7 +1861,7 @@ class DocumentForensicService {
 
     // 3. Detect Overlapped Content (Whiteout masks, annotations, layered streams)
     final whiteoutRegex = RegExp(r'(?:([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+re\s+(?:1(?:\.0+)?\s+g|1(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?\s+rg)\s+[fFsS]|(?:1(?:\.0+)?\s+g|1(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?\s+rg)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s+re\s+[fFsS])');
-    for (final m in whiteoutRegex.allMatches(rawAscii).take(8)) {
+    for (final m in whiteoutRegex.allMatches(rawAscii).take(40)) {
       final xStr = m.group(1) ?? m.group(5);
       final yStr = m.group(2) ?? m.group(6);
       final wStr = m.group(3) ?? m.group(7);
@@ -1876,15 +1876,57 @@ class DocumentForensicService {
     }
 
     final annotRectRegex = RegExp(r'/Rect\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]');
-    for (final m in annotRectRegex.allMatches(rawAscii).take(8)) {
+    final parsedAnnotations = <({double x1, double y1, double x2, double y2, String subtype, int r, int g, int b, String? text})>[];
+
+    for (final m in annotRectRegex.allMatches(rawAscii).take(120)) {
+      final start = math.max(0, m.start - 120);
+      final end = math.min(rawAscii.length, m.end + 120);
+      final snippet = rawAscii.substring(start, end);
+
+      // Skip off-screen / popup comment sidebars
+      if (snippet.contains('/Subtype/Popup') || snippet.contains('/Subtype /Popup')) {
+        continue;
+      }
+
       final x1 = double.tryParse(m.group(1)!) ?? 0.0;
       final y1 = double.tryParse(m.group(2)!) ?? 0.0;
       final x2 = double.tryParse(m.group(3)!) ?? 0.0;
       final y2 = double.tryParse(m.group(4)!) ?? 0.0;
+
+      // Skip off-page or zero-area annotations
+      if (x1 >= pageWidth || y1 >= pageHeight) continue;
+      if (x2 <= 0 || y2 <= 0) continue;
+
+      final minX = math.max(0.0, math.min(x1, x2));
+      final minY = math.max(0.0, math.min(y1, y2));
       final w = (x2 - x1).abs();
       final h = (y2 - y1).abs();
-      if (w > 0 && h > 0 && w < pageWidth && h < pageHeight) {
-        markArea(math.min(x1, x2), math.min(y1, y2), w, h);
+
+      if (w > 0 && h > 0 && w <= pageWidth * 1.05 && h <= pageHeight * 1.05) {
+        markArea(minX, minY, w, h);
+
+        final stMatch = RegExp(r'/Subtype\s*/(\w+)').firstMatch(snippet);
+        final subtype = stMatch?.group(1) ?? 'Annot';
+
+        final cMatch = RegExp(r'/C\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]').firstMatch(snippet);
+        final cr = ((double.tryParse(cMatch?.group(1) ?? '0.8') ?? 0.8) * 255).clamp(0.0, 255.0).toInt();
+        final cg = ((double.tryParse(cMatch?.group(2) ?? '0.2') ?? 0.2) * 255).clamp(0.0, 255.0).toInt();
+        final cb = ((double.tryParse(cMatch?.group(3) ?? '0.4') ?? 0.4) * 255).clamp(0.0, 255.0).toInt();
+
+        final ctMatch = RegExp(r'/Contents\s*\((.*?)\)').firstMatch(snippet);
+        final contents = ctMatch?.group(1);
+
+        parsedAnnotations.add((
+          x1: minX,
+          y1: minY,
+          x2: minX + w,
+          y2: minY + h,
+          subtype: subtype,
+          r: cr,
+          g: cg,
+          b: cb,
+          text: contents,
+        ));
       }
     }
 
@@ -2071,9 +2113,9 @@ class DocumentForensicService {
             final lh = math.max(4, ((line.bounds.height / pageHeight) * canvasH).round().clamp(3, 14));
 
             final bool isAltered = revisionDiff != null && revisionDiff.addedTokens.any((t) => line.text.contains(t));
-            final rColor = isAltered ? 244 : 180;
-            final gColor = isAltered ? 63 : 190;
-            final bColor = isAltered ? 94 : 205;
+            final rColor = isAltered ? 244 : 100;
+            final gColor = isAltered ? 63 : 116;
+            final bColor = isAltered ? 94 : 139;
 
             for (int px = lx; px < lx + lw; px++) {
               for (int py = ly; py < ly + lh; py++) {
@@ -2081,7 +2123,7 @@ class DocumentForensicService {
               }
             }
           }
-        } else {
+        } else if (parsedAnnotations.isEmpty) {
           for (int line = 0; line < 26; line++) {
             final lineY = 70 + line * 24;
             if (lineY >= canvasH - 30) break;
@@ -2089,6 +2131,56 @@ class DocumentForensicService {
             for (int x = 45; x < math.min(canvasW - 40, 45 + lineW); x++) {
               for (int y = lineY; y < lineY + 6; y++) {
                 docCanvas.setPixelRgb(x, y, 203, 213, 225);
+              }
+            }
+          }
+        }
+
+        // Draw visible annotations (ink strokes, highlighter bands, text notes)
+        for (final annot in parsedAnnotations) {
+          final ax1 = ((annot.x1 / pageWidth) * canvasW).round().clamp(0, canvasW - 1);
+          final ax2 = ((annot.x2 / pageWidth) * canvasW).round().clamp(ax1 + 1, canvasW);
+          final ayTop = ((1.0 - annot.y2 / pageHeight) * canvasH).round().clamp(0, canvasH - 1);
+          final ayBottom = ((1.0 - annot.y1 / pageHeight) * canvasH).round().clamp(ayTop + 1, canvasH);
+          final aw = ax2 - ax1;
+          final ah = ayBottom - ayTop;
+
+          if (annot.subtype.toLowerCase().contains('highlight')) {
+            for (int px = ax1; px < ax2; px++) {
+              for (int py = ayTop; py < ayBottom; py++) {
+                final cur = docCanvas.getPixel(px, py);
+                final mixedR = ((cur.r * 0.3) + (annot.r * 0.7)).toInt().clamp(0, 255);
+                final mixedG = ((cur.g * 0.3) + (annot.g * 0.7)).toInt().clamp(0, 255);
+                final mixedB = ((cur.b * 0.3) + (annot.b * 0.7)).toInt().clamp(0, 255);
+                docCanvas.setPixelRgb(px, py, mixedR, mixedG, mixedB);
+              }
+            }
+          } else if (annot.subtype.toLowerCase().contains('freetext')) {
+            for (int px = ax1; px < ax2; px++) {
+              for (int py = ayTop; py < ayBottom; py++) {
+                docCanvas.setPixelRgb(px, py, annot.r, annot.g, annot.b);
+              }
+            }
+          } else {
+            // Ink drawings and signatures - render perimeter and dynamic stroke lines
+            for (int px = ax1; px < ax2; px++) {
+              docCanvas.setPixelRgb(px, ayTop, annot.r, annot.g, annot.b);
+              if (ayBottom - 1 < canvasH) {
+                docCanvas.setPixelRgb(px, ayBottom - 1, annot.r, annot.g, annot.b);
+              }
+            }
+            for (int py = ayTop; py < ayBottom; py++) {
+              docCanvas.setPixelRgb(ax1, py, annot.r, annot.g, annot.b);
+              if (ax2 - 1 < canvasW) {
+                docCanvas.setPixelRgb(ax2 - 1, py, annot.r, annot.g, annot.b);
+              }
+            }
+            if (aw > 16 && ah > 16) {
+              final step = math.max(2, (ah ~/ 5));
+              for (int py = ayTop + step; py < ayBottom; py += step) {
+                for (int px = ax1 + 2; px < ax2 - 2; px += 3) {
+                  docCanvas.setPixelRgb(px, py, annot.r, annot.g, annot.b);
+                }
               }
             }
           }
