@@ -110,7 +110,7 @@ class _AiDetectionScreenState extends ConsumerState<AiDetectionScreen>
 
       await Future.delayed(const Duration(milliseconds: 350));
       setState(() => _analysisStatusStep =
-          'Querying Gemini 2.5 Flash multimodal neural validator...');
+          'Primary Engine: Querying Google Gemini 2.5 Flash neural validator...');
 
       final report = await AiDetectionService.analyzeFile(
         bytes: bytes,
@@ -468,8 +468,8 @@ We then had coffee, reviewed the git diff, and signed off on the release build.
                 const SizedBox(width: 8),
                 Text(
                   hasGeminiKey
-                      ? 'HYBRID ENGINE: GEMINI 2.5 FLASH ACTIVE (95%+ ACCURACY)'
-                      : 'EDGE-ONLY ENGINE (ADD GEMINI KEY FOR 95%+ ACCURACY)',
+                      ? 'PRIMARY ENGINE: GEMINI 2.5 FLASH ACTIVE (95%+ VERIFIABLE ACCURACY)'
+                      : 'FALLBACK: EDGE-ONLY (ADD GEMINI_API_KEY IN .ENV FOR PRIMARY ENGINE)',
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,

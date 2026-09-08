@@ -19,11 +19,18 @@ echo "SUPABASE_URL=$SUPABASE_URL" > .env
 echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" >> .env
 echo "DEVICE_UUID=web-agent" >> .env
 echo "HIVE_ENCRYPTION_KEY_BASE64=MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=" >> .env
+if [ -n "$GEMINI_API_KEY" ]; then
+  echo "GEMINI_API_KEY=$GEMINI_API_KEY" >> .env
+fi
 
 echo ">>> Getting Packages..."
 flutter pub get
 
 echo ">>> Building Web Bundle..."
-flutter build web --release
+DART_DEFINES=""
+if [ -n "$GEMINI_API_KEY" ]; then
+  DART_DEFINES="--dart-define=GEMINI_API_KEY=$GEMINI_API_KEY"
+fi
+flutter build web --release $DART_DEFINES
 
 echo ">>> Build Complete!"

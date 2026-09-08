@@ -62,6 +62,13 @@ class GeminiAiClient {
         return envKey.trim();
       }
     } catch (_) {}
+
+    // Support compile-time dart-define injection from Vercel / CI
+    const dartDefineKey = String.fromEnvironment('GEMINI_API_KEY');
+    if (dartDefineKey.isNotEmpty) {
+      return dartDefineKey.trim();
+    }
+
     return null;
   }
 

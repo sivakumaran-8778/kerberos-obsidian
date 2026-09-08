@@ -128,5 +128,13 @@ I told her about the dust. We laughed, got sandwiches from across the street, an
       expect(result.errorMessage, isNotNull);
       expect(result.errorMessage, contains('GEMINI_API_KEY is not configured'));
     });
+
+    test('GeminiAiClient correctly resolves and caches in-memory API key for session', () {
+      expect(GeminiAiClient.getApiKey(), isNull);
+      GeminiAiClient.setApiKey('AIzaSyTestKey12345');
+      expect(GeminiAiClient.getApiKey(), equals('AIzaSyTestKey12345'));
+      // Clean up
+      GeminiAiClient.setApiKey('');
+    });
   });
 }

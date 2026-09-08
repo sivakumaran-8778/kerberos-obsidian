@@ -275,7 +275,7 @@ class AiDetectionService {
       );
     }
 
-    // 9. Bayesian Ensemble Fusion
+    // 9. Bayesian Ensemble Fusion (Gemini 2.5 Flash as Primary)
     double finalAiProbability = edgeProb;
     bool isNeuralVerified = false;
     String detectedModelFamily = 'Natural Human Stylometry';
@@ -283,11 +283,33 @@ class AiDetectionService {
 
     if (geminiResult != null && geminiResult.isSuccess) {
       isNeuralVerified = true;
-      // 40% Edge Forensics + 60% Gemini 2.5 Flash Neural evaluation
-      final fused = (edgeProb * 0.35) + (geminiResult.syntheticProbability * 0.65);
+      // PRIMARY ENGINE: Gemini 2.5 Flash holds 85% primary decision authority + 15% edge corroboration
+      final fused = (geminiResult.syntheticProbability * 0.85) + (edgeProb * 0.15);
       finalAiProbability = fused.clamp(0.01, 0.99);
       detectedModelFamily = geminiResult.modelLineage;
       summary = geminiResult.executiveSummary;
+
+      // Enrich sentence heatmap with Gemini's primary neural attributions
+      if (geminiResult.sentenceEvaluations.isNotEmpty) {
+        for (final geminiSent in geminiResult.sentenceEvaluations) {
+          final idx = geminiSent['sentence_index'];
+          final prob = (geminiSent['ai_probability'] as num?)?.toDouble();
+          final reason = geminiSent['reason'] as String?;
+          if (idx is int && idx >= 1 && idx <= sentenceSegments.length) {
+            final existing = sentenceSegments[idx - 1];
+            final enrichedProb = prob ?? existing.aiProbability;
+            sentenceSegments[idx - 1] = AiTextSpanSegment(
+              sentenceIndex: idx,
+              text: existing.text,
+              aiProbability: enrichedProb,
+              reason: (reason != null && reason.isNotEmpty)
+                  ? reason
+                  : existing.reason,
+              isFlagged: enrichedProb >= 0.60,
+            );
+          }
+        }
+      }
     } else {
       if (hasAiMetadata) {
         detectedModelFamily = 'AI Document Engine (${metadataInfo['Producer'] ?? metadataInfo['Creator']})';
@@ -563,7 +585,8 @@ class AiDetectionService {
           'Definitive generative metadata parameters detected inside file bitstream ($detectedModelFamily).';
     } else if (geminiResult != null && geminiResult.isSuccess) {
       isNeuralVerified = true;
-      final fused = (edgeProb * 0.35) + (geminiResult.syntheticProbability * 0.65);
+      // PRIMARY ENGINE: Gemini 2.5 Flash Multimodal Vision holds 85% primary decision authority
+      final fused = (geminiResult.syntheticProbability * 0.85) + (edgeProb * 0.15);
       finalAiProbability = fused.clamp(0.02, 0.99);
       detectedModelFamily = geminiResult.modelLineage;
       summary = geminiResult.executiveSummary;
